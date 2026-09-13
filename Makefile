@@ -1,9 +1,12 @@
-.PHONY: bdmtool appimage clean
+.PHONY: bdmtool appimage clean run
 
 VERSION=$(shell sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml)
 APPIMAGETOOL=.tmp/appimagetool
 
 default: bdmtool
+
+run:
+	go run -tags=wayland .
 
 bdmtool:
 	go build -ldflags '-s -w' -o bdmtool .

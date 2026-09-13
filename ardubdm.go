@@ -69,6 +69,8 @@ const (
 type ArduBDM struct {
 	p   io.ReadWriteCloser
 	tmo time.Duration
+	// 28F driver delay counts, calibrated by am28Setup against wall time.
+	d10us, d6us, d10ms uint16
 }
 
 // arduPorts lists the USB serial ports the adapter could be on.
@@ -651,8 +653,7 @@ func (a *ArduBDM) programAM29(e *ECU, bin []byte, prog progressFn) error {
 			a.resetAM29()
 			return fmt.Errorf("flash driver did not return at %08X: %w", e.FlashAddr+done, err)
 		}
-		// The driver reports through its parameter block; register reads are
-		// not trustworthy on the T7 (see logDriverState for the raw picture).
+		// The driver reports through its parameter block, read back with a block dump.
 		res, err := a.block(e.DrvAddr+am29DrvParams, am29DrvHeader)
 		if err != nil {
 			a.resetAM29()
@@ -683,7 +684,7 @@ func (a *ArduBDM) logDriverState(e *ECU, done uint32) {
 		}
 		regs += fmt.Sprintf("%s=%s ", n, r)
 	}
-	debugLog("driver regs (shifted on T7, see README): %s", regs)
+	debugLog("driver regs: %s", regs)
 	if fl, err := a.block(e.FlashAddr+done, 16); err == nil {
 		debugLog("flash at %08X: % X", e.FlashAddr+done, fl)
 	}
@@ -756,9 +757,12 @@ func (a *ArduBDM) am28Run(e *ECU, mode uint16, addr, end uint32, data []byte, li
 	binary.BigEndian.PutUint32(blk[4:], end)
 	binary.BigEndian.PutUint16(blk[8:], mode)
 	binary.BigEndian.PutUint16(blk[10:], uint16(len(data)/2))
-	binary.BigEndian.PutUint16(blk[16:], am28Delay10us)
-	binary.BigEndian.PutUint16(blk[18:], am28Delay6us)
-	binary.BigEndian.PutUint16(blk[20:], am28Delay10ms)
+	if a.d10ms == 0 {
+		a.d10us, a.d6us, a.d10ms = am28Delay10us, am28Delay6us, am28Delay10ms
+	}
+	binary.BigEndian.PutUint16(blk[16:], a.d10us)
+	binary.BigEndian.PutUint16(blk[18:], a.d6us)
+	binary.BigEndian.PutUint16(blk[20:], a.d10ms)
 	copy(blk[am28DrvHeader:], data)
 	if err := a.load(e.DrvAddr+am28DrvParams, blk, func(uint32) {}); err != nil {
 		return nil, err
@@ -786,8 +790,9 @@ func modeName(mode uint16) string {
 	return "timing"
 }
 
-// am28Setup maps the driver RAM, uploads and verifies the driver, and times
-// its delay loop: 100 x 10 ms should take about a second.
+// am28Setup maps the driver RAM, uploads and verifies the driver, and
+// calibrates its delay loop: 100 x "10 ms" with the nominal counts is timed
+// against the wall clock and the counts scaled so a pulse really is 10 ms.
 func (a *ArduBDM) am28Setup(e *ECU) error {
 	if err := a.uploadDriver(e, am28Driver); err != nil {
 		return err
@@ -795,15 +800,23 @@ func (a *ArduBDM) am28Setup(e *ECU) error {
 	if err := a.writeSysReg(sysregSR, 0x2700); err != nil {
 		return err
 	}
+	a.d10us, a.d6us, a.d10ms = am28Delay10us, am28Delay6us, am28Delay10ms
 	t := time.Now()
 	if _, err := a.am28Run(e, am28ModeTime, 0, 0, nil, 10*time.Second); err != nil {
 		return err
 	}
 	d := time.Since(t)
-	debugLog("28F driver delay check: 100 x 10 ms took %v", d.Round(time.Millisecond))
-	if am28TimingCheck && (d < 500*time.Millisecond || d > 3*time.Second) {
+	if am28TimingCheck && (d < 300*time.Millisecond || d > 5*time.Second) {
 		return fmt.Errorf("flash driver timing off (%v for 100 x 10 ms): wrong CPU clock?", d.Round(time.Millisecond))
 	}
+	if am28TimingCheck {
+		scale := float64(time.Second) / float64(d)
+		a.d10us = uint16(float64(am28Delay10us) * scale)
+		a.d6us = uint16(float64(am28Delay6us) * scale)
+		a.d10ms = uint16(float64(am28Delay10ms) * scale)
+	}
+	debugLog("28F driver delay check: 100 x 10 ms took %v, counts scaled to %d/%d/%d",
+		d.Round(time.Millisecond), a.d10us, a.d6us, a.d10ms)
 	return nil
 }
 
@@ -849,13 +862,20 @@ func (a *ArduBDM) eraseAM28(e *ECU, prog progressFn) error {
 		done += n
 		prog(done / 2)
 	}
-	// 1000 pulses x 10 ms plus verify reads: allow a generous minute.
-	res, err := a.am28Run(e, am28ModeErase, e.FlashAddr, e.FlashAddr+e.FlashSize, nil, 60*time.Second)
-	if err != nil {
-		a.resetAM28(e)
-		return err
+	// Pulse phase in 16 address chunks for the progress bar: a pulse only
+	// happens when a word fails verify, so the chunking adds almost none.
+	// 1000 pulses x 10 ms plus verify reads: allow a generous minute each.
+	chunk := e.FlashSize / 16
+	for done := uint32(0); done < e.FlashSize; done += chunk {
+		res, err := a.am28Run(e, am28ModeErase, e.FlashAddr+done, e.FlashAddr+done+chunk, nil, 60*time.Second)
+		if err != nil {
+			a.resetAM28(e)
+			return err
+		}
+		if done == 0 {
+			debugLog("28F erase: first chunk took %d pulses", 1000-binary.BigEndian.Uint16(res[14:]))
+		}
+		prog(e.FlashSize/2 + (done+chunk)/2)
 	}
-	debugLog("28F erase done, %d of 1000 pulses left", binary.BigEndian.Uint16(res[14:]))
-	prog(e.FlashSize)
 	return a.resetAM28(e)
 }
