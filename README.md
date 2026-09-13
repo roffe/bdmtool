@@ -1,9 +1,9 @@
-# BDM Tool
+# BDMTool
 
-![BDM Tool main window](screenshot.png)
+![BDMTool main window](screenshot.png)
 
 Reads and writes SAAB Trionic (and Volvo CEM) ECU flash and SRAM over BDM
-(Background Debug Mode). A Go/Fyne reimplementation of Janis Silins' BDM Tool.
+(Background Debug Mode). A extended Go/Fyne version of Janis Silins' BDM Tool.
 
 ## Supported adapters
 
