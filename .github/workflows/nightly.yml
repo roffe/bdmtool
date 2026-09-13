@@ -1,0 +1,117 @@
+name: Nightly
+
+on:
+  push:
+    branches:
+    - 'master'
+    - 'develop'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6.0.2
+    - name: Set up Go
+      uses: actions/setup-go@v6.4.0
+      with:
+        go-version: '1.27.0'
+        cache: false
+    - name: Get dependencies
+      run: sudo apt-get update && sudo apt-get install 7zip gcc libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libx11-dev xorg-dev libusb-1.0-0-dev libgtk-3-dev
+    - name: Get Go dependencies
+      run: go get .
+    - name: Build bdmtool
+      run: make bdmtool
+    - name: Build AppImage
+      run: make appimage
+    - name: Archive
+      run: 7z a bdmtool_ubuntu_x64.zip bdmtool
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux
+        path: |
+          bdmtool_ubuntu_x64.zip
+          BDMTool-x86_64.AppImage
+
+  windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v6.0.2
+
+    - name: Set up Go
+      uses: actions/setup-go@v6.4.0
+      with:
+        go-version: '1.27.0'
+        cache: false
+
+    - name: Install dependencies
+      run: |
+        go get .
+        go install fyne.io/tools/cmd/fyne@latest
+
+    - name: Install llvm-mingw
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/20251216/llvm-mingw-20251216-ucrt-x86_64.zip" -OutFile llvm-mingw.zip
+        Expand-Archive -Path llvm-mingw.zip -DestinationPath .\ -Force
+        Rename-Item -Path .\llvm-mingw-20251216-ucrt-x86_64 -NewName llvm-mingw
+
+    - name: Install libusb via vcpkg
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git --depth=1
+        .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        .\vcpkg\vcpkg.exe install libusb:x64-windows
+
+    - name: Build
+      env:
+        CGO_ENABLED: "1"
+        CC: x86_64-w64-mingw32-clang.exe
+        CXX: x86_64-w64-mingw32-clang++.exe
+      run: |
+        $env:PATH += ";$env:GITHUB_WORKSPACE\llvm-mingw\bin"
+        $env:PKG_CONFIG_PATH = "$env:GITHUB_WORKSPACE\vcpkg\packages\libusb_x64-windows\lib\pkgconfig"
+        $env:CGO_CFLAGS = "-I$env:GITHUB_WORKSPACE\vcpkg\packages\libusb_x64-windows\include\libusb-1.0"
+        fyne package --release
+
+    - name: Creating Zip
+      run: 7z a bdmtool_windows_x64.zip BDMTool.exe .\vcpkg\packages\libusb_x64-windows\bin\libusb-1.0.dll
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows
+        path: bdmtool_windows_x64.zip
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [linux, windows]
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v7
+      with:
+        merge-multiple: true
+    - name: Delete previous nightly release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      run: gh release delete nightly --yes --cleanup-tag || true
+    - name: Publish nightly release
+      uses: softprops/action-gh-release@v3
+      with:
+        tag_name: nightly
+        name: Nightly Build
+        body: Automated build from `${{ github.ref_name }}` at ${{ github.sha }}.
+        prerelease: true
+        make_latest: false
+        target_commitish: ${{ github.sha }}
+        files: |
+          bdmtool_ubuntu_x64.zip
+          BDMTool-x86_64.AppImage
+          bdmtool_windows_x64.zip

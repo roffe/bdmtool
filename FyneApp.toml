@@ -1,0 +1,11 @@
+Website = "https://roffe.nu/"
+
+[Details]
+Icon = "icons/app.png"
+Name = "BDMTool"
+ID = "com.roffe.bdmtool"
+Version = "3.0.0"
+Build = 10
+
+[Migrations]
+fyneDo = true
