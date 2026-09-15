@@ -1,3 +1,5 @@
 bdmtool
 .tmp/
 *.AppImage
+go.work
+go.work.sum
