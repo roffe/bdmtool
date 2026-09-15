@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.bug.st/serial"
@@ -310,6 +311,9 @@ func (a *ArduBDM) block(addr, n uint32) ([]byte, error) {
 // debugLog receives adapter diagnostics; the UI points it at its log.
 var debugLog = func(string, ...any) {}
 
+// statusLog sets the UI's status line for a phase of a longer operation.
+var statusLog = func(string) {}
+
 // dump block-reads size bytes from addr to w.
 func (a *ArduBDM) dump(addr, size uint32, w io.Writer, prog progressFn) error {
 	for done := uint32(0); done < size; {
@@ -424,12 +428,12 @@ func (a *ArduBDM) writeMem(addr, val uint32, size int) error {
 // enterBDM halts the MCU, selects supervisor data space and applies the ECU's
 // chip-select / watchdog setup so flash is reachable.
 func (a *ArduBDM) enterBDM(e *ECU) error {
-	// Stop keeps the ECU's own setup; if it fails the CPU is halted (double
-	// bus fault, e.g. after a crash with erased vectors) or BDM was never
-	// enabled, and only a reset with BKPT held gets us in. Prepare below then
-	// supplies the chip selects the ECU code never got to set.
-	if err := a.Stop(); err != nil {
-		if err := a.Restart(); err != nil {
+	// Reset into BDM (BKPT held low across reset), as Just4Trionic and bdmtoy
+	// do: the ECU code never runs, so Prepare below owns the whole setup,
+	// including the write-once SYPCR watchdog register. Stop (halt a running
+	// ECU) is only the fallback for a board whose BDM does not enable at reset.
+	if err := a.Restart(); err != nil {
+		if err := a.Stop(); err != nil {
 			return fmt.Errorf("target will not enter BDM: %w", err)
 		}
 	}
@@ -528,12 +532,16 @@ func (a *ArduBDM) WriteFlash(e *ECU, bin []byte, erase bool, prog progressFn) er
 	if err := a.enterBDM(e); err != nil {
 		return err
 	}
-	if erase {
-		if err := f.erase(e, prog); err != nil {
-			return err
-		}
+	if !erase {
+		return f.program(e, bin, prog)
 	}
-	return f.program(e, bin, prog)
+	// One bar for both phases: erase fills the first half, programming the second.
+	statusLog("Erasing flash...")
+	if err := f.erase(e, func(d uint32) { prog(d / 2) }); err != nil {
+		return err
+	}
+	statusLog("Writing flash...")
+	return f.program(e, bin, func(d uint32) { prog(e.FlashSize/2 + d/2) })
 }
 
 // verify compares a chunk of flash against want.
@@ -691,6 +699,167 @@ func (a *ArduBDM) logDriverState(e *ECU, done uint32) {
 	if pb, err := a.block(e.DrvAddr+am29DrvParams, 32); err == nil {
 		debugLog("params at %08X: % X", e.DrvAddr+am29DrvParams, pb)
 	}
+}
+
+// Identify works out which ECU is attached from its CPU and flash chips, the
+// way Just4Trionic does at connect. Reset into BDM, then: a 68377 module
+// configuration register means Trionic 8. Otherwise apply Just4Trionic's
+// 68332 prep (boot chip select over 1 MB at 0, byte-lane write selects,
+// Vpp on: T5 and T7 both take it) and send AA/55/90: 29F chips need the
+// unlock, 28F chips take the final 0x90 alone, both then answer with
+// manufacturer and device codes at 0 and 2. Returns the matching ECU table
+// entry and a description of the chips.
+func (a *ArduBDM) Identify() (*ECU, string, error) {
+	if err := a.Restart(); err != nil {
+		return nil, "", fmt.Errorf("target will not reset into BDM: %w", err)
+	}
+	if err := a.setFunctionCode(fcSuperData); err != nil {
+		return nil, "", err
+	}
+	r, err := a.cmd(grpMemory, cmdReadWord, hex32(0xfffa00), 4)
+	if err != nil {
+		return nil, "", err
+	}
+	if mcr := unhex16(r); mcr&0x7e4f == 0x7e4f { // 68377 MCR after reset, per Just4Trionic
+		return ecuByName("Trionic 8"), fmt.Sprintf("MC68377 (MCR %04X)", mcr), nil
+	}
+	prep := []memWrite{
+		w8(0xfffa21, 0x00), w16(0xfffa44, 0x3fff),
+		w16(0xfffa48, 0x0007), w16(0xfffa4a, 0x6870),
+		w16(0xfffa50, 0x0007), w16(0xfffa52, 0x3030),
+		w16(0xfffa54, 0x0007), w16(0xfffa56, 0x5030),
+		w16(0xfffc14, 0x0040), w8(0xfffc17, 0x40), // Vpp on: 28F chips only answer with it
+	}
+	for _, w := range prep {
+		if err := a.writeMem(w.addr, w.val, w.size); err != nil {
+			return nil, "", err
+		}
+	}
+	time.Sleep(10 * time.Millisecond)
+	ids, err := a.batch([]req{
+		wordW(0xaaaa, 0xaaaa), wordW(0x5554, 0x5555), wordW(0xaaaa, 0x9090),
+		wordR(0), wordR(2),
+		wordW(0xaaaa, 0xf0f0), wordW(0, 0xffff), wordW(0, 0xffff), // 29F reset, 28F reset
+		wordW(0xfffc14, 0x0000), // Vpp off
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	mfr, dev := unhex16(ids[3]), unhex16(ids[4])
+	desc := fmt.Sprintf("flash ID %04X/%04X", mfr, dev)
+	// Leave the ECU running its own code with BDM enabled (reset with BKPT
+	// held, then go), so a later halt sees the ECU's real setup rather than
+	// the probe prep above, and any flash operation can still get in.
+	if err := a.Restart(); err == nil {
+		_ = a.Run(0)
+	}
+	type match struct {
+		mfr, dev   uint16
+		ecu, chips string
+	}
+	for _, m := range []match{
+		{0x0001, 0x22ab, "Trionic 7", "AMD 29F400BB"},
+		{0x0001, 0x2223, "Trionic 7", "AMD 29F400BT"},
+		{0x0101, 0x2020, "Trionic 5.5 (AM29F010 chips)", "2x AMD 29F010"},
+		{0x0101, 0xa7a7, "Trionic 5.5 (28F010 chips)", "2x AMD 28F010"},
+		{0x8989, 0xb4b4, "Trionic 5.5 (28F010 chips)", "2x Intel 28F010"},
+		{0x0101, 0x2525, "Trionic 5.2", "2x AMD 28F512"},
+		{0x8989, 0xb8b8, "Trionic 5.2", "2x Intel 28F512"},
+	} {
+		if mfr == m.mfr && dev == m.dev {
+			return ecuByName(m.ecu), m.chips + " (" + desc + ")", nil
+		}
+	}
+	return nil, desc, fmt.Errorf("unknown flash chips, %s", desc)
+}
+
+// Info decodes the 68332 SIM registers into a readable summary: clock,
+// last reset reason, watchdog/bus monitor, and the chip-select memory map.
+// It halts the running ECU first so the values are the ECU's own setup; if
+// it cannot be halted (BDM not enabled at its last reset) it resets into BDM
+// and reports the reset defaults, saying so.
+func (a *ArduBDM) Info() (string, error) {
+	state := "halted, ECU's own setup"
+	if err := a.Stop(); err != nil {
+		if err := a.Restart(); err != nil {
+			return "", fmt.Errorf("target will not enter BDM: %w", err)
+		}
+		state = "after reset into BDM (reset defaults, the ECU code has not run)"
+	}
+	if err := a.setFunctionCode(fcSuperData); err != nil {
+		return "", err
+	}
+	var reqs []req
+	reqs = append(reqs, wordR(0xfffa00), wordR(0xfffa04), byteR(0xfffa07), byteR(0xfffa21),
+		wordR(0xfffa44), wordR(0xfffa46))
+	for i := 0; i < 12; i++ { // CSBOOT, CS0..CS10
+		reqs = append(reqs, wordR(0xfffa48+uint32(4*i)), wordR(0xfffa4a+uint32(4*i)))
+	}
+	r, err := a.batch(reqs)
+	if err != nil {
+		return "", err
+	}
+	simcr, syncr := unhex16(r[0]), unhex16(r[1])
+	rsr, sypcr := unhex16(r[2]), unhex16(r[3])
+	cspar0, cspar1 := unhex16(r[4]), unhex16(r[5])
+	var b strings.Builder
+	fmt.Fprintf(&b, "SIM registers (%s)\n", state)
+	if simcr&0x7e4f == 0x7e4f {
+		fmt.Fprintf(&b, "  MC68377 (MCR %04X); SIM decode not implemented for it\n", simcr)
+		return b.String(), nil
+	}
+	// SYNCR: W bit 15, X bit 14, Y bits 13-8; fsys = 4 * 32768 * (Y+1) * 2^(2W+X)
+	w, x, y := syncr>>15&1, syncr>>14&1, syncr>>8&0x3f
+	fsys := 4.0 * 32768 * float64(y+1) * float64(uint(1)<<(2*w+x))
+	fmt.Fprintf(&b, "  SIMCR %04X  SYNCR %04X: CPU clock %.2f MHz\n", simcr, syncr, fsys/1e6)
+	reasons := ""
+	for bit, name := range map[uint]string{7: "external", 6: "power-on", 5: "software watchdog", 4: "halt (double bus fault)", 2: "loss of clock", 1: "RESET instruction", 0: "test"} {
+		if rsr>>bit&1 == 1 {
+			reasons += name + " "
+		}
+	}
+	fmt.Fprintf(&b, "  RSR %02X: last reset by %s\n", rsr, strings.TrimSpace(reasons))
+	swe, swp, swt := sypcr>>7&1, sypcr>>6&1, sypcr>>4&3
+	wd := "off"
+	if swe == 1 {
+		clocks := float64(uint(1)<<(9+2*swt)) * float64(1+511*swp)
+		wd = fmt.Sprintf("on, timeout %.1f ms", clocks/fsys*1e3)
+	}
+	bm := "off"
+	if sypcr>>2&1 == 1 {
+		bm = fmt.Sprintf("on, %d us", []int{64, 32, 16, 8}[sypcr&3])
+	}
+	fmt.Fprintf(&b, "  SYPCR %02X: watchdog %s; bus monitor %s; halt monitor %s\n", sypcr, wd, bm, []string{"off", "on"}[sypcr>>3&1])
+	fmt.Fprintf(&b, "  chip selects (CSPAR0 %04X CSPAR1 %04X):\n", cspar0, cspar1)
+	sizes := []string{"2K", "8K", "16K", "64K", "128K", "256K", "512K", "1M"}
+	for i := 0; i < 12; i++ {
+		bar, or := unhex16(r[6+2*i]), unhex16(r[7+2*i])
+		name := "CSBOOT"
+		pin := cspar0 & 3
+		if i > 0 {
+			name = fmt.Sprintf("CS%d", i-1)
+			if i-1 < 6 {
+				pin = cspar0 >> (2 * uint(i)) & 3
+			} else {
+				pin = cspar1 >> (2 * uint(i-7)) & 3
+			}
+		}
+		byteSel := or >> 13 & 3
+		if pin < 2 || byteSel == 0 {
+			continue // pin not a chip select, or select disabled
+		}
+		rw := []string{"?", "read", "write", "read/write"}[or>>11&3]
+		bytes := []string{"", "lower byte", "upper byte", "both bytes"}[byteSel]
+		dsack := or >> 6 & 0xf
+		ws := fmt.Sprintf("%d wait states", dsack)
+		if dsack == 14 {
+			ws = "external DSACK"
+		} else if dsack == 15 {
+			ws = "fast termination"
+		}
+		fmt.Fprintf(&b, "    %-6s %06X size %-4s %-10s %-11s %s\n", name, uint32(bar&0xfff8)<<8, sizes[bar&7], rw, bytes, ws)
+	}
+	return b.String(), nil
 }
 
 // uploadDriver maps the driver RAM, writes drv there and reads it back.

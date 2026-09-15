@@ -1,10 +1,11 @@
 module github.com/roffe/bdmtool
 
-go 1.26.4
+go 1.27.1
 
 require (
 	fyne.io/fyne/v2 v2.8.2-0.20260910171750-900a0401dbe4
 	github.com/gotmc/libusb/v2 v2.6.0
+	github.com/roffe/avrflash v0.0.0-20260915165418-3c740b6afbf8
 	github.com/sqweek/dialog v0.0.0-20260123140253-64c163d53aac
 	go.bug.st/serial v1.8.0
 )

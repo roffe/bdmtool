@@ -95,6 +95,15 @@ var ECUs = []ECU{
 	{"Volvo CEM", "28f400", 0x0, 0x80000, 0xf00000, 0xffff, false, prepT5, 0, nil},
 }
 
+func ecuByName(name string) *ECU {
+	for i := range ECUs {
+		if ECUs[i].Name == name {
+			return &ECUs[i]
+		}
+	}
+	return nil
+}
+
 func concat[T any](s ...[]T) []T {
 	var out []T
 	for _, v := range s {

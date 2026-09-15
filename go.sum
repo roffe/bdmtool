@@ -58,6 +58,8 @@ github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e h1:fD57ERR4JtEqsWb
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/roffe/avrflash v0.0.0-20260915165418-3c740b6afbf8 h1:UFC9/pHvzT8FUll7SELFdeKNjT/MbKx3gHbMW7bz7Z0=
+github.com/roffe/avrflash v0.0.0-20260915165418-3c740b6afbf8/go.mod h1:gsCOTJJVNf5jNAutAGwvkKPB5f9nt/+gjpwzJ7y9CVI=
 github.com/rymdport/portal v0.4.2 h1:7jKRSemwlTyVHHrTGgQg7gmNPJs88xkbKcIL3NlcmSU=
 github.com/rymdport/portal v0.4.2/go.mod h1:kFF4jslnJ8pD5uCi17brj/ODlfIidOxlgUDTO5ncnC4=
 github.com/sqweek/dialog v0.0.0-20260123140253-64c163d53aac h1:/QqP+ajFMma4hNWQyBDVaQQhz9Z1kDyXScNWMO3owx0=

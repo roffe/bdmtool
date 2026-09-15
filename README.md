@@ -48,22 +48,57 @@ For non-commercial use only.
 If you like the software please [donate](https://paypal.me/roffe84) 💕
 
 
+## Identify ECU
+
+With an ardubdm connected, the "Identify ECU" button first halts the running
+ECU and decodes its 68332 SIM registers into the log: CPU clock from SYNCR
+(16.78 MHz on a prepped T7), the reason for the last reset (RSR: power-on,
+external, watchdog, halt after a double bus fault, loss of clock), watchdog
+and bus monitor settings (SYPCR), and the chip-select memory map (base, size,
+read/write, byte lanes, wait states). If the ECU cannot be halted it resets
+into BDM and reports the reset defaults, saying so.
+
+It then resets into BDM and reads the flash chip IDs the way Just4Trionic
+does (a 68377 CPU is reported as Trionic 8 before any flash probe): 29F400 =
+Trionic 7, a pair of 28F010 or 29F010 = Trionic 5.5, a pair of 28F512 =
+Trionic 5.2. The matching ECU type is selected and the chips are logged, and
+the ECU is then reset and left running its own code (with BDM enabled), so a
+second Identify shows its real configuration rather than the probe's.
+
+`ARDUBDM_PORT=/dev/ttyACM1 go test -run Hardware -v` runs the same against a
+connected adapter from the command line.
+
 ## Connecting
 
-The ardubdm PCB has a shrouded 2x5 box header with the standard CPU32 BDM
-pinout (1 DS, 2 BERR, 3 GND, 4 BKPT, 5 GND, 6 FREEZE, 7 RESET, 8 DSI, 9 VDD,
-10 DSO). The 10-way IDC cable is wired 1:1; the red stripe is pin 1. At the
+The ardubdm PCB has a shrouded 2x5 box header with the standard CPU32 BDM pinout 
+
+    | BDM pin | Signal      | Arduino |
+    |---------|-------------|---------|
+    | 1       | DS          | D8      |
+    | 2       | BERR        | D6      |
+    | 3       | GND         | GND     |
+    | 4       | BKPT/DSCLK  | D5      |
+    | 5       | GND         | GND     |
+    | 6       | FREEZE      | D4      |
+    | 7       | RESET       | D7      |
+    | 8       | IFETCH/DSI  | D3      |
+    | 9       | VDD         | A0      |
+    | 10      | IPIPE/DSO   | D2      |
+
+The 10-way IDC cable is wired 1:1; the red stripe is pin 1. At the
 adapter the plug only fits one way.
 
-The T5 and T7 have a bare 2x4 header carrying BDM pins 3-10. The 2x5 plug is
-one column wider, so one column of holes stays empty: **always holes 1 and 2,
-the column at the red stripe**. Holes 3-10 go on the eight pins. Numbers below
-are the plug's holes, in parentheses = empty, hanging next to the header.
+The T7 has the same standard 2x5 header, all ten pins present (BERR on pin 2
+is wired to the MCU), so the plug goes on pin for pin. 
+
+The T5 has pins 1 and 2 unused, so there one column of plug holes stays empty: **holes 1 and 2, the
+column at the red stripe**, and holes 3-10 go on the pins. Numbers below are
+the plug's holes, in parentheses = empty, hanging next to the header.
 
 Hold the ECU with the BDM header side towards you: the big edge connector
 and its heatsink at the far edge, the CPU (the large square chip) near you,
-and the 2x4 BDM header just below the CPU at the near edge. T5 and T7 look
-the same in this respect.
+and the BDM header just below the CPU at the near edge. T5 and T7 look the
+same in this respect.
 
 ```
    +----------------------------------------------------+
@@ -73,8 +108,8 @@ the same in this respect.
    |                |   68332   |                        |
    |                |    CPU    |                        |
    |                +-----------+                        |
-   |                 o o o o                             |
-   |                 o o o o  <- BDM                     |
+   |                 o o o o o                           |
+   |                 o o o o o  <- BDM                   |
    +----------------------------------------------------+
                    near edge, towards you
 ```
@@ -96,19 +131,14 @@ turned half a turn compared with the T7:
 
 ### Trionic 7
 
-Ribbon leaves **upwards**. Empty holes 1 and 2 on the **left**:
+Ribbon leaves **upwards**. All ten holes on the pins, red stripe on the
+**left**:
 
 ```
       ribbon up
         |||||
         |||||
-   (2)  4  6  8  10     <- even row
-   (1)  3  5  7   9     <- odd row, red stripe at hole 1
-    ^   ^^^^^^^^^^^
-  empty on the 2x4 header
+    2  4  6  8  10      <- even row
+    1  3  5  7   9      <- odd row, red stripe at hole 1
+    ^^^^^^^^^^^^^^
 ```
-
-The column with holes 9/10 (VDD, DSO) is at the board edge. Compared with
-the old cable (which had GND on pin 1 and sat with its holes 9/10 past the
-board edge), the plug keeps the same orientation and sits one column further
-in.

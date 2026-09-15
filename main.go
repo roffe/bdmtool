@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image/png"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -59,6 +60,13 @@ type Adapter interface {
 	WriteSRAM(e *ECU, snap []byte, prog progressFn) error
 }
 
+// Identifier is implemented by adapters that can tell which ECU is attached
+// and describe its MCU setup.
+type Identifier interface {
+	Info() (string, error)
+	Identify() (*ECU, string, error)
+}
+
 type adapterDef struct {
 	name string
 	open func() (Adapter, error)
@@ -71,12 +79,18 @@ var adapters = []adapterDef{
 }
 
 // One ardubdm entry per USB serial port present at startup.
-func init() {
+// refreshAdapters rebuilds the adapter list: the fixed ones plus one entry
+// per serial port an ardubdm could be on, so a board plugged in after start
+// shows up when the list is refreshed.
+func refreshAdapters() {
+	adapters = adapters[:3]
 	for _, p := range arduPorts() {
 		adapters = append(adapters, adapterDef{"ardubdm on " + p,
 			func() (Adapter, error) { return OpenArdu(p) }})
 	}
 }
+
+func init() { refreshAdapters() }
 
 func opener[T Adapter](open func() (T, error)) func() (Adapter, error) {
 	return func() (Adapter, error) {
@@ -93,15 +107,16 @@ type UI struct {
 	c    Adapter
 	busy atomic.Bool
 
-	adapter    *canvas.Text
-	adapterSel *widget.Select
-	status     *canvas.Text
-	prog       *widget.ProgressBar
-	ecuSel     *widget.Select
-	erase      *widget.Check
-	verify     *widget.Check
-	connectBtn *widget.Button
-	ops        []*widget.Button
+	adapter     *canvas.Text
+	adapterSel  *widget.Select
+	status      *canvas.Text
+	prog        *widget.ProgressBar
+	ecuSel      *widget.Select
+	identifyBtn *widget.Button
+	erase       *widget.Check
+	verify      *widget.Check
+	connectBtn  *widget.Button
+	ops         []*widget.Button
 
 	logText   strings.Builder
 	logLabel  *widget.Label
@@ -166,6 +181,9 @@ func (u *UI) menu() *fyne.MainMenu {
 			item("Reset", u.resetMCU),
 			item("Stop", u.stopMCU),
 		),
+		fyne.NewMenu("Firmware",
+			item("Upload ArduBDM", u.uploadArdubdm),
+		),
 		fyne.NewMenu("Help", item("About BDM Tool...", u.about)),
 	)
 }
@@ -186,20 +204,34 @@ func (u *UI) build() fyne.CanvasObject {
 	}
 	u.connectBtn = widget.NewButton("Connect", u.toggleConnect)
 
-	adapterNames := make([]string, len(adapters))
-	for i, a := range adapters {
-		adapterNames[i] = a.name
-	}
 	prefs := fyne.CurrentApp().Preferences()
-	u.adapterSel = widget.NewSelect(adapterNames, func(name string) {
+	u.adapterSel = widget.NewSelect(nil, func(name string) {
 		prefs.SetString("adapter", name)
 	})
+	adapterNames := func() []string {
+		refreshAdapters()
+		names := make([]string, len(adapters))
+		for i, a := range adapters {
+			names[i] = a.name
+		}
+		return names
+	}
+	u.adapterSel.SetOptions(adapterNames())
 	// Restore last used adapter; SetSelected ignores names not in the list
 	// (e.g. an ardubdm port that is gone), so fall back to the first.
 	u.adapterSel.SetSelected(prefs.String("adapter"))
 	if u.adapterSel.SelectedIndex() < 0 {
 		u.adapterSel.SetSelectedIndex(0)
 	}
+	// Rescan the serial ports, keeping the current choice if it still exists.
+	refreshBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
+		cur := u.adapterSel.Selected
+		u.adapterSel.SetOptions(adapterNames())
+		u.adapterSel.SetSelected(cur)
+		if u.adapterSel.SelectedIndex() < 0 {
+			u.adapterSel.SetSelectedIndex(0)
+		}
+	})
 
 	names := make([]string, len(ECUs))
 	for i, e := range ECUs {
@@ -210,6 +242,9 @@ func (u *UI) build() fyne.CanvasObject {
 	})
 	u.ecuSel.PlaceHolder = " "
 	u.ecuSel.SetSelected(prefs.String("ecu"))
+
+	u.identifyBtn = widget.NewButton("Identify ECU", u.identify)
+	u.ops = append(u.ops, u.identifyBtn)
 
 	u.erase = widget.NewCheck("Erase before writing", nil)
 	u.erase.SetChecked(true)
@@ -245,9 +280,10 @@ func (u *UI) build() fyne.CanvasObject {
 	u.setOps(false)
 
 	head := container.NewVBox(
-		container.NewBorder(nil, nil, widget.NewLabel("Adapter:"), u.connectBtn, u.adapterSel),
+		container.NewBorder(nil, nil, widget.NewLabel("Adapter:"), container.NewHBox(refreshBtn, u.connectBtn), u.adapterSel),
 		container.NewPadded(u.adapter),
 		widget.NewSeparator(),
+		u.identifyBtn,
 		container.NewBorder(nil, nil, widget.NewLabel("ECU type:"), nil, u.ecuSel),
 		container.NewGridWithColumns(2, u.erase, u.verify),
 		container.NewGridWithColumns(2, flash, sram),
@@ -337,6 +373,7 @@ func (u *UI) toggleConnect() {
 			}
 			u.c = c
 			debugLog = u.logf
+			statusLog = func(t string) { fyne.Do(func() { setText(u.status, t) }) }
 			if verr != nil {
 				u.logf("firmware version unavailable: %v", verr)
 				setText(u.adapter, "Connected")
@@ -368,6 +405,31 @@ func (u *UI) disconnect() {
 // operations
 // =====================
 
+// identify asks the adapter which ECU is attached and selects it.
+func (u *UI) identify() {
+	id, ok := u.c.(Identifier)
+	if !ok {
+		dialog.ShowInformation("BDM Tool", "This adapter cannot identify the ECU", u.win)
+		return
+	}
+	u.run("Identify ECU", 1, func(progressFn) error {
+		info, err := id.Info()
+		if err != nil {
+			return err
+		}
+		u.logf("%s", strings.TrimRight(info, "\n"))
+		e, chips, err := id.Identify()
+		if err != nil {
+			return err
+		}
+		fyne.Do(func() {
+			u.ecuSel.SetSelected(e.Name)
+			u.logf("Identified %s: %s", e.Name, chips)
+		})
+		return nil
+	})
+}
+
 func (u *UI) ecu() *ECU {
 	i := u.ecuSel.SelectedIndex()
 	if i < 0 {
@@ -390,6 +452,7 @@ func (u *UI) run(name string, total uint32, fn func(progressFn) error) {
 	step := max(total/100, 1)
 	start := time.Now()
 	go func() {
+		log.Println("starting", name)
 		last := uint32(0)
 		err := fn(func(done uint32) {
 			if done-last < step && done < total {
