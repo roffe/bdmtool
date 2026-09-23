@@ -64,6 +64,22 @@ const (
 	am28ModeProg  = 1
 	am28ModeErase = 2
 	am28ModeTime  = 3
+
+	// CPU32 CMFI driver (ardubdm/driver/cmfi): the on-chip flash of the
+	// MC68F375, the Trionic 8 MCP. Commands go in D0, status comes back in D0.
+	cmfiArray     = 0x40000 // 8 x 32 KB main array
+	cmfiShadow    = 0x100   // 256-byte shadow row, seen at the bottom of the array with SIE set
+	cmfiBufOffset = 0x800   // source buffer, past the driver and its stack (driver + 0x7FC)
+	cmfiChunk     = 1024    // bytes per driver run: 64-byte aligned, and one block write
+	cmfiMCR       = 0xFFF800
+	cmfiSIE       = 0x2000 // CMFIMCR shadow information enable
+	cmfiOpWrite   = 1
+	cmfiOpErase   = 2
+	cmfiOpInit    = 4
+	cmfiOK        = 1 // driver status for "all went ok"
+
+	cmfiEraseTimeout = 60 * time.Second // one 1 s pulse per sector plus margin reads (the wire format caps at 65 s)
+	cmfiWriteTimeout = 30 * time.Second
 )
 
 // ArduBDM is an ardubdm adapter on a serial port.
@@ -400,6 +416,12 @@ func (a *ArduBDM) readAReg(n byte) (uint32, error) {
 	return uint32(v), nil
 }
 
+// writeReg writes a data or address register: 0-7 = D0-D7, 8-15 = A0-A7.
+func (a *ArduBDM) writeReg(n byte, v uint32) error {
+	_, err := a.cmd(grpRegs, 'A', fmt.Sprintf("%02X%s", n, hex32(v)), 0)
+	return err
+}
+
 func (a *ArduBDM) writeSysReg(reg byte, v uint32) error {
 	_, err := a.cmd(grpRegs, cmdWriteSysRegF, fmt.Sprintf("%02X%s", reg, hex32(v)), 0)
 	return err
@@ -441,6 +463,10 @@ func (a *ArduBDM) enterBDM(e *ECU) error {
 		return err
 	}
 	for _, w := range e.Prepare {
+		if w.size == 0 {
+			time.Sleep(time.Duration(w.val) * time.Millisecond)
+			continue
+		}
 		if err := a.writeMem(w.addr, w.val, w.size); err != nil {
 			return err
 		}
@@ -471,6 +497,9 @@ func (a *ArduBDM) enterSRAM(e *ECU) error {
 func (a *ArduBDM) ReadFlash(e *ECU, w io.Writer, prog progressFn) error {
 	if err := a.enterBDM(e); err != nil {
 		return err
+	}
+	if e.FlashType == "cmfi" {
+		return a.readCMFI(e, w, prog)
 	}
 	return a.dump(e.FlashAddr, e.FlashSize, w, prog)
 }
@@ -504,6 +533,8 @@ func (a *ArduBDM) algo(e *ECU) (flashAlgo, error) {
 		return flashAlgo{a.eraseAM29, a.programAM29}, nil
 	case "28f010":
 		return flashAlgo{a.eraseAM28, a.programAM28}, nil
+	case "cmfi":
+		return flashAlgo{a.eraseCMFI, a.programCMFI}, nil
 	}
 	// ponytail: Volvo CEM's 28F400 needs the Intel block-erase/status flow,
 	// which Just4Trionic never had either. Add when someone has one to test.
@@ -759,6 +790,10 @@ func (a *ArduBDM) Identify() (*ECU, string, error) {
 	}
 	for _, m := range []match{
 		{0x0001, 0x22ab, "Trionic 7", "AMD 29F400BB"},
+		// The CANdi module's Am29F200B, untested: its chip selects are not the
+		// ones this probe sets up, so it may simply not answer.
+		{0x0001, 0x2251, "MC68331", "AMD 29F200BT"},
+		{0x0001, 0x2257, "MC68331", "AMD 29F200BB"},
 		{0x0001, 0x2223, "Trionic 7", "AMD 29F400BT"},
 		{0x0101, 0x2020, "Trionic 5.5 (AM29F010 chips)", "2x AMD 29F010"},
 		{0x0101, 0xa7a7, "Trionic 5.5 (28F010 chips)", "2x AMD 28F010"},
@@ -1047,4 +1082,150 @@ func (a *ArduBDM) eraseAM28(e *ECU, prog progressFn) error {
 		prog(e.FlashSize/2 + (done+chunk)/2)
 	}
 	return a.resetAM28(e)
+}
+
+// ---- CMFI (MC68F375 on-chip flash, Trionic 8 MCP) ----
+//
+// The array has no command interface of its own: every program and erase
+// pulse is timed by a CPU32 driver, ardubdm/driver/cmfi, vendored from bdmtoy.
+// It runs from the MCP's DPTRAM with its parameter tables (CMFI v5.1 at the
+// 24 MHz prepT8MCP sets) built in, so it is uploaded as-is and never patched.
+
+//go:embed cpu32cmfi.bin
+var cmfiDriver []byte
+
+// setShadow flips CMFIMCR SIE, which swaps the 256-byte shadow row in over the
+// bottom of the array.
+func (a *ArduBDM) setShadow(on bool) error {
+	r, err := a.cmd(grpMemory, cmdReadWord, hex32(cmfiMCR), 4)
+	if err != nil {
+		return err
+	}
+	v := unhex16(r)
+	if on == (v&cmfiSIE != 0) {
+		return nil
+	}
+	return a.writeMem(cmfiMCR, uint32(v^cmfiSIE), 2)
+}
+
+// readCMFI dumps the array and then the shadow row, which the image carries as
+// its last 256 bytes -- the layout bdmtoy uses.
+func (a *ArduBDM) readCMFI(e *ECU, w io.Writer, prog progressFn) error {
+	if err := a.setShadow(false); err != nil {
+		return err
+	}
+	if err := a.dump(e.FlashAddr, cmfiArray, w, prog); err != nil {
+		return err
+	}
+	if err := a.setShadow(true); err != nil {
+		return err
+	}
+	err := a.dump(e.FlashAddr, cmfiShadow, w, func(d uint32) { prog(cmfiArray + d) })
+	if serr := a.setShadow(false); err == nil {
+		err = serr
+	}
+	return err
+}
+
+// cmfiSetup uploads the driver and initialises it: it installs its own command
+// jumps and stack, and must run once before any other command.
+func (a *ArduBDM) cmfiSetup(e *ECU) error {
+	if err := a.uploadDriver(e, cmfiDriver); err != nil {
+		return err
+	}
+	if err := a.writeSysReg(sysregSR, 0x2700); err != nil { // interrupts off while our code runs
+		return err
+	}
+	return a.cmfiRun(e, cmfiOpInit, 5*time.Second)
+}
+
+// cmfiRun starts the driver at op and waits for it to drop back into BDM.
+func (a *ArduBDM) cmfiRun(e *ECU, op uint32, limit time.Duration) error {
+	if err := a.writeReg(0, op); err != nil {
+		return err
+	}
+	st, err := a.RunWaitFor(e.DrvAddr, limit)
+	if err != nil {
+		return fmt.Errorf("CMFI driver did not return (%s): %w", cmfiOpName(op), err)
+	}
+	if st != cmfiOK {
+		return fmt.Errorf("CMFI %s failed: %s", cmfiOpName(op), cmfiStatus(st))
+	}
+	return nil
+}
+
+func cmfiOpName(op uint32) string {
+	switch op {
+	case cmfiOpWrite:
+		return "program"
+	case cmfiOpErase:
+		return "erase"
+	}
+	return "init"
+}
+
+// cmfiStatus decodes the driver's status codes (enum enStatus in cmfi.h).
+func cmfiStatus(st uint32) string {
+	switch st {
+	case 10:
+		return "driver saw no data"
+	case 11:
+		return "offset or length not a multiple of 64"
+	case 20:
+		return "no programming pulses configured"
+	case 21:
+		return "pulse limit reached, flash did not verify"
+	}
+	return fmt.Sprintf("status %d", st)
+}
+
+// eraseCMFI erases all eight sectors; the shadow row sits in sector 0.
+func (a *ArduBDM) eraseCMFI(e *ECU, prog progressFn) error {
+	if err := a.cmfiSetup(e); err != nil {
+		return err
+	}
+	if err := a.writeReg(1, 0xFF); err != nil { // D1: sector bitmask
+		return err
+	}
+	if err := a.cmfiRun(e, cmfiOpErase, cmfiEraseTimeout); err != nil {
+		return err
+	}
+	prog(e.FlashSize)
+	return nil
+}
+
+// programCMFI writes the image a chunk at a time. Chunk offsets from cmfiArray
+// up are the shadow row, which the driver maps back to the bottom of the array
+// itself. All-0xFF chunks are skipped: on erased flash they are no-ops.
+func (a *ArduBDM) programCMFI(e *ECU, bin []byte, prog progressFn) error {
+	if err := a.cmfiSetup(e); err != nil {
+		return err
+	}
+	buf := e.DrvAddr + cmfiBufOffset
+	for done := 0; done < len(bin); {
+		n := min(cmfiChunk, len(bin)-done)
+		if data := bin[done : done+n]; !erased(data) {
+			if err := a.load(buf, data, func(uint32) {}); err != nil {
+				return err
+			}
+			for _, r := range []struct {
+				n byte
+				v uint32
+			}{
+				{1, uint32(n / 2)}, // D1: words
+				{8, uint32(done)},  // A0: offset into the array
+				{9, buf},           // A1: source buffer
+			} {
+				if err := a.writeReg(r.n, r.v); err != nil {
+					return err
+				}
+			}
+			if err := a.cmfiRun(e, cmfiOpWrite, cmfiWriteTimeout); err != nil {
+				return fmt.Errorf("%w (at %06X)", err, done)
+			}
+		}
+		done += n
+		prog(uint32(done))
+	}
+	return nil
 }

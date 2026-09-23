@@ -16,6 +16,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/gotmc/libusb/v2"
 )
@@ -330,6 +331,11 @@ func (c *Combi) readMem32(addr uint32, setAddr bool) (uint32, error) {
 // enterBDM halts the MCU, selects supervisor data space and applies the ECU's
 // chip-select / watchdog setup so flash is reachable.
 func (c *Combi) enterBDM(e *ECU) error {
+	// The MCP's on-chip flash needs a CPU32 driver uploaded to its DPTRAM;
+	// only ardubdm (ardubdm.go) drives it.
+	if e.FlashType == "cmfi" {
+		return fmt.Errorf("%s: only the ardubdm adapter supports its on-chip flash", e.Name)
+	}
 	if err := c.Stop(); err != nil {
 		return err
 	}
@@ -337,6 +343,10 @@ func (c *Combi) enterBDM(e *ECU) error {
 		return err
 	}
 	for _, w := range e.Prepare {
+		if w.size == 0 {
+			time.Sleep(time.Duration(w.val) * time.Millisecond)
+			continue
+		}
 		if err := c.writeMem(w.addr, w.val, w.size); err != nil {
 			return err
 		}

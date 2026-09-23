@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -174,5 +175,101 @@ func TestArduHandshake(t *testing.T) {
 	}
 	if b.out.String() != "av\rav\r" {
 		t.Fatalf("sent %q, want two version queries", b.out.String())
+	}
+}
+
+func TestCMFIProgram(t *testing.T) {
+	// 1280-byte image: the first chunk is erased and skipped, the second is
+	// programmed. Driver upload + init, then one write run.
+	f := &fakePort{}
+	ok := func(n int) {
+		for range n {
+			f.in.WriteByte(termOK)
+		}
+	}
+	ok(2)                  // driver upload, two blocks
+	f.in.Write(cmfiDriver) // readback
+	f.in.WriteByte(termOK)
+	ok(1)                              // SR
+	ok(1)                              // D0 = init
+	f.in.WriteString("00000001\r\n\r") // init returned ok
+	ok(1)                              // buffer block write
+	ok(3)                              // D1, A0, A1
+	ok(1)                              // D0 = write
+	f.in.WriteString("00000001\r\n\r") // write returned ok
+	a := &ArduBDM{p: f, tmo: time.Second}
+	e := &ECU{Name: "MCP", FlashType: "cmfi", FlashSize: 1280, DrvAddr: 0x100000}
+	bin := bytes.Repeat([]byte{0xFF}, 1024)
+	bin = append(bin, bytes.Repeat([]byte{0x12, 0x34}, 128)...)
+	if err := a.programCMFI(e, bin, func(uint32) {}); err != nil {
+		t.Fatal(err)
+	}
+	sent := f.out.Bytes()
+	for _, want := range []string{
+		"mS001000000400\r",                   // driver, first block
+		"rW0B00002700\r",                     // SR
+		"rA0000000004\r", "cw001000001388\r", // init and its run
+		"mS001008000100\r",                   // the buffer
+		"rA0100000080\r",                     // D1 = 128 words
+		"rA0800000400\r",                     // A0 = offset 0x400
+		"rA0900100800\r",                     // A1 = buffer
+		"rA0000000001\r", "cw001000007530\r", // write and its run
+	} {
+		if !bytes.Contains(sent, []byte(want)) {
+			t.Fatalf("missing %q in %q", want, sent)
+		}
+	}
+	if bytes.Contains(sent, []byte("rA0800000000\r")) {
+		t.Fatal("erased first chunk was programmed")
+	}
+}
+
+func TestCMFIShadowRead(t *testing.T) {
+	// SIE is set for the last 256 bytes of the image and cleared after.
+	f := &fakePort{}
+	// one reply per block dump the host asks for
+	body := func(n int, fill byte) {
+		for done := 0; done < n; done += arduBlock {
+			f.in.Write(bytes.Repeat([]byte{fill}, min(arduBlock, n-done)))
+			f.in.WriteByte(termOK)
+		}
+	}
+	f.in.WriteString("4800\r\n\r") // CMFIMCR, SIE already clear
+	body(cmfiArray, 0xAA)          // the array, one 4 KB block at a time in reality
+	f.in.WriteString("4800\r\n\r") // CMFIMCR before setting SIE
+	f.in.WriteByte(termOK)         // the write that sets it
+	body(cmfiShadow, 0x55)         // the shadow row
+	f.in.WriteString("6800\r\n\r") // CMFIMCR before clearing SIE
+	f.in.WriteByte(termOK)
+	a := &ArduBDM{p: f, tmo: time.Second}
+	var buf bytes.Buffer
+	e := &ECU{Name: "MCP", FlashType: "cmfi", FlashSize: cmfiArray + cmfiShadow}
+	if err := a.readCMFI(e, &buf, func(uint32) {}); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != cmfiArray+cmfiShadow || buf.Bytes()[cmfiArray] != 0x55 {
+		t.Fatalf("read %d bytes, shadow starts %02X", buf.Len(), buf.Bytes()[cmfiArray])
+	}
+	sent := f.out.String()
+	for _, want := range []string{"mW00FFF8006800", "mW00FFF8004800"} {
+		if !strings.Contains(sent, want) {
+			t.Fatalf("missing %q in %q", want, sent)
+		}
+	}
+}
+
+func TestPrepareDelay(t *testing.T) {
+	// A delay() step in a prepare sequence pauses instead of writing.
+	f := &fakePort{}
+	for range 4 {
+		f.in.WriteByte(termOK) // restart, SFC, DFC, the one real write
+	}
+	a := &ArduBDM{p: f, tmo: time.Second}
+	e := &ECU{Name: "x", Prepare: []memWrite{delay(1), w16(0xfffa04, 0xd608)}}
+	if err := a.enterBDM(e); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.out.String(), "cs\rrW0E00000005\rrW0F00000005\rmW00FFFA04D608\r"; got != want {
+		t.Fatalf("sent %q, want %q", got, want)
 	}
 }

@@ -19,7 +19,30 @@ Reads and writes SAAB Trionic (and Volvo CEM) ECU flash and SRAM over BDM
 - Trionic 5.5 (AM29F010 chips)
 - Trionic 7
 - Trionic 8
+- Trionic 8 MCP (MC68F375 coprocessor, ardubdm only)
+- MC68331
 - Volvo CEM
+
+### MC68331
+
+The GM CANdi module: MC68331, one Am29F200B (256 KB) at 0 and two K6X1008
+SRAMs (256 KB) at 0x100000. The chip-select and clock values come from the
+module's own firmware, via bdmtoy's `initCandi()`. The flash is ordinary AMD
+29Fxxx, so erase and write use the same routines as a Trionic 7; the CPU32
+flash driver runs from the module's external SRAM, because the 68331's
+internal TPU RAM would have to be mapped on top of it. Not yet bench-verified.
+
+### Trionic 8 MCP
+
+The MCP's flash, SRAM and DPTRAM are all on the MC68F375 itself and are
+unmapped after a reset into BDM, so connecting maps them and takes the PLL to
+24 MHz. The image is 256 KB + the 256-byte shadow row, 0x40100 bytes, the
+shadow last -- the same layout bdmtoy uses. There is no command interface in
+the array: every program and erase pulse is timed by a CPU32 driver uploaded
+to DPTRAM (`driver/cmfi` in the ardubdm repo, vendored from bdmtoy, embedded
+here as `cpu32cmfi.bin`). That driver is why the MCP works on ardubdm only;
+the CombiAdapter and USB BDM program flash in their own firmware and refuse
+this ECU. Not yet bench-verified.
 
 ## Build and run
 
@@ -42,6 +65,7 @@ To regenerate the screenshot above (renders offscreen, no display needed):
 - Original BDM Tool v2.13 by Janis Silins, 2009-2016.
 - Portions of code from BDM v0.90, Scott Howard, 1992.
 - Flash routines transcribed from Just4Trionic (Sophie Dexter).
+- Trionic 8 MCP setup and its CMFI flash driver from bdmtoy.
 
 For non-commercial use only.
 
@@ -141,4 +165,21 @@ Ribbon leaves **upwards**. All ten holes on the pins, red stripe on the
     2  4  6  8  10      <- even row
     1  3  5  7   9      <- odd row, red stripe at hole 1
     ^^^^^^^^^^^^^^
+```
+
+### Trionic 8
+
+```
+10 9
+ 8 7
+ 6 5
+ 4 3
+ 2 1
+```
+
+### Trionic 8 MCP
+
+```
+ 2 4 6 8 10
+ 1 3 5 7 9
 ```
