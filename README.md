@@ -85,7 +85,15 @@ into BDM and reports the reset defaults, saying so.
 It then resets into BDM and reads the flash chip IDs the way Just4Trionic
 does (a 68377 CPU is reported as Trionic 8 before any flash probe): 29F400 =
 Trionic 7, a pair of 28F010 or 29F010 = Trionic 5.5, a pair of 28F512 =
-Trionic 5.2. The matching ECU type is selected and the chips are logged, and
+Trionic 5.2 (AMD, Intel and Catalyst 28F parts). A T5.2 fitted with 28F010
+chips identifies as Trionic 5.5 (28F010 chips), since that is the flash it
+has. Write flash repeats a file smaller than the flash to
+fill it, as bdmtoy does, so a 128 KB T5.2 bin goes onto those chips twice:
+the CPU boots from one half and runs the code from the other. With an ardubdm,
+writing any Trionic 5 type first reads the chip IDs and switches to the type
+the chips match, as bdmtoy sizes its writes from the chips: picking Trionic
+5.2 by hand on such a box would write only the upper half and leave the one
+it boots from blank. The matching ECU type is selected and the chips are logged, and
 the ECU is then reset and left running its own code (with BDM enabled), so a
 second Identify shows its real configuration rather than the probe's.
 

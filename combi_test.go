@@ -125,3 +125,15 @@ func TestBDMStripStatus(t *testing.T) {
 		t.Fatalf("stripStatus = %q", got)
 	}
 }
+
+func TestMirror(t *testing.T) {
+	bin := []byte{1, 2, 3, 4}
+	if got := mirror(bin, 8); !bytes.Equal(got, []byte{1, 2, 3, 4, 1, 2, 3, 4}) {
+		t.Fatalf("mirror to 8 = %v", got)
+	}
+	for _, size := range []uint32{4, 6, 2} { // exact, uneven, smaller: untouched
+		if got := mirror(bin, size); !bytes.Equal(got, bin) {
+			t.Fatalf("mirror to %d = %v, want input", size, got)
+		}
+	}
+}

@@ -546,37 +546,72 @@ func (u *UI) writeFlash() {
 		return
 	}
 	u.open(".bin", func(bin []byte) {
-		if uint32(len(bin)) != e.FlashSize {
-			dialog.ShowError(fmt.Errorf("file is %d bytes, %s flash is %d",
-				len(bin), e.Name, e.FlashSize), u.win)
+		id, ok := u.c.(Identifier)
+		if !ok || !strings.HasPrefix(e.Name, "Trionic 5") {
+			u.confirmWrite(e, bin)
 			return
 		}
-		dialog.ShowConfirm("Write flash",
-			"Current contents of flash memory will be lost!\nDo you want to continue?",
-			func(ok bool) {
-				if !ok {
-					return
+		// T5 boxes get fitted with bigger flash chips, so size the write from
+		// the chips rather than the selection, as bdmtoy does: a T5.2 image
+		// written as 128 KB at 0x60000 onto 28F010s leaves the half the CPU
+		// boots from blank.
+		u.run("Checking flash chips", 1, func(progressFn) error {
+			found, chips, err := id.Identify()
+			if err != nil {
+				return err
+			}
+			if !strings.HasPrefix(found.Name, "Trionic 5") {
+				return fmt.Errorf("%s selected, but the flash chips say %s: %s", e.Name, found.Name, chips)
+			}
+			fyne.Do(func() {
+				u.logf("Flash chips: %s", chips)
+				if found != e {
+					u.logf("Writing as %s to match the chips", found.Name)
+					u.ecuSel.SetSelected(found.Name)
 				}
-				erase, verify := u.erase.Checked, u.verify.Checked
-				u.run("Write flash", e.FlashSize, func(p progressFn) error {
-					if err := u.c.WriteFlash(e, bin, erase, p); err != nil {
-						return err
-					}
-					if !verify {
-						return nil
-					}
-					u.logf("Verifying...")
-					var buf bytes.Buffer
-					if err := u.c.ReadFlash(e, &buf, p); err != nil {
-						return err
-					}
-					if !bytes.Equal(buf.Bytes(), bin) {
-						return errors.New("verify failed: flash contents differ from file")
-					}
-					return nil
-				})
-			}, u.win)
+				u.confirmWrite(found, bin)
+			})
+			return nil
+		})
 	})
+}
+
+// confirmWrite fits bin to e's flash, asks, then writes and verifies.
+func (u *UI) confirmWrite(e *ECU, bin []byte) {
+	if m := mirror(bin, e.FlashSize); len(m) != len(bin) {
+		u.logf("File is %d bytes, repeated %dx to fill %s flash", len(bin), len(m)/len(bin), e.Name)
+		bin = m
+	}
+	if uint32(len(bin)) != e.FlashSize {
+		dialog.ShowError(fmt.Errorf("file is %d bytes, %s flash is %d",
+			len(bin), e.Name, e.FlashSize), u.win)
+		return
+	}
+	dialog.ShowConfirm("Write flash",
+		"Current contents of flash memory will be lost!\nDo you want to continue?",
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			erase, verify := u.erase.Checked, u.verify.Checked
+			u.run("Write flash", e.FlashSize, func(p progressFn) error {
+				if err := u.c.WriteFlash(e, bin, erase, p); err != nil {
+					return err
+				}
+				if !verify {
+					return nil
+				}
+				u.logf("Verifying...")
+				var buf bytes.Buffer
+				if err := u.c.ReadFlash(e, &buf, p); err != nil {
+					return err
+				}
+				if !bytes.Equal(buf.Bytes(), bin) {
+					return errors.New("verify failed: flash contents differ from file")
+				}
+				return nil
+			})
+		}, u.win)
 }
 
 // pick runs a native file dialog. sqweek's GTK backend initialises GTK on the

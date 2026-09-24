@@ -798,8 +798,10 @@ func (a *ArduBDM) Identify() (*ECU, string, error) {
 		{0x0101, 0x2020, "Trionic 5.5 (AM29F010 chips)", "2x AMD 29F010"},
 		{0x0101, 0xa7a7, "Trionic 5.5 (28F010 chips)", "2x AMD 28F010"},
 		{0x8989, 0xb4b4, "Trionic 5.5 (28F010 chips)", "2x Intel 28F010"},
+		{0x3131, 0xb4b4, "Trionic 5.5 (28F010 chips)", "2x Catalyst 28F010"},
 		{0x0101, 0x2525, "Trionic 5.2", "2x AMD 28F512"},
 		{0x8989, 0xb8b8, "Trionic 5.2", "2x Intel 28F512"},
+		{0x3131, 0xb8b8, "Trionic 5.2", "2x Catalyst 28F512"},
 	} {
 		if mfr == m.mfr && dev == m.dev {
 			return ecuByName(m.ecu), m.chips + " (" + desc + ")", nil

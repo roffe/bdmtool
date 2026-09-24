@@ -1,5 +1,7 @@
 package main
 
+import "bytes"
+
 // ECU descriptors and the per-ECU register setup ("prepare") sequences,
 // transcribed from the CombiAdapter .NET driver (caAdapterBase::ECUDescriptors
 // and caAdapterBase::prepare_ecu). The writes configure the MCU's chip
@@ -141,6 +143,17 @@ var ECUs = []ECU{
 	// maps: the 68331's TPU RAM would land on top of that SRAM at 0x100000.
 	{"MC68331", "29f400", 0x0, 0x40000, 0x100000, 0x40000, false, prepCandi, 0x100000, nil},
 	{"Volvo CEM", "28f400", 0x0, 0x80000, 0xf00000, 0xffff, false, prepT5, 0, nil},
+}
+
+// mirror repeats a smaller image to fill size, as bdmtoy does: a T5.2 fitted
+// with 28F010 chips boots from 0 but runs at 0x60000, two different halves
+// of the chips, so its 128 KB image has to sit in both. Anything that does
+// not divide size evenly is returned as is for the size check to reject.
+func mirror(bin []byte, size uint32) []byte {
+	if n := uint32(len(bin)); n > 0 && n < size && size%n == 0 {
+		return bytes.Repeat(bin, int(size/n))
+	}
+	return bin
 }
 
 func ecuByName(name string) *ECU {
