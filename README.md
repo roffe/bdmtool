@@ -151,6 +151,8 @@ same in this respect.
 Ribbon leaves **upwards**. Empty holes 1 and 2 on the **right**. Same plug,
 turned half a turn compared with the T7:
 
+![trionic 5 BDM header](t5.jpg)
+
 ```
       ribbon up
         |||||
@@ -165,6 +167,8 @@ turned half a turn compared with the T7:
 
 Ribbon leaves **downwards**. All ten holes on the pins, red stripe on the
 **left**:
+
+![trionic 7 BDM header](t7.jpg)
 
 ```
     2  4  6  8  10      <- even row
