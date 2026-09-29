@@ -148,31 +148,31 @@ same in this respect.
 
 ### Trionic 5
 
-Ribbon leaves **downwards**. Empty holes 1 and 2 on the **right**. Same plug,
+Ribbon leaves **upwards**. Empty holes 1 and 2 on the **right**. Same plug,
 turned half a turn compared with the T7:
-
-```
-     9  7  5  3  (1)    <- odd row, red stripe at hole 1
-    10  8  6  4  (2)    <- even row
-    ^^^^^^^^^^^   ^
-  on the 2x4 header  empty
-        |||||
-        |||||        
-     ribbon down
-```
-
-### Trionic 7
-
-Ribbon leaves **upwards**. All ten holes on the pins, red stripe on the
-**left**:
 
 ```
       ribbon up
         |||||
         |||||
+     9  7  5  3  (1)    <- odd row, red stripe at hole 1
+    10  8  6  4  (2)    <- even row
+    ^^^^^^^^^^^   ^
+  on the 2x4 header  empty
+```
+
+### Trionic 7
+
+Ribbon leaves **downwards**. All ten holes on the pins, red stripe on the
+**left**:
+
+```
     2  4  6  8  10      <- even row
     1  3  5  7   9      <- odd row, red stripe at hole 1
     ^^^^^^^^^^^^^^
+        |||||
+        |||||
+     ribbon down
 ```
 
 ### Trionic 8
