@@ -13,7 +13,7 @@ func (u *UI) combiMenu() *fyne.MenuItem {
 	m := fyne.NewMenuItem("CombiAdapter", nil)
 	m.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("1.1 (legacy)", func() { u.uploadCombi("1.1 (legacy)", firmwares.CombiAdapter111Bin) }),
-		fyne.NewMenuItem("Latest", func() { u.uploadCombi("latest", firmwares.CombiAdapterBin) }),
+		fyne.NewMenuItem("2.0 (latest)", func() { u.uploadCombi("2.0 (latest)", firmwares.CombiAdapterBin) }),
 	)
 	return m
 }
