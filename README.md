@@ -7,7 +7,12 @@ Reads and writes SAAB Trionic (and Volvo CEM) ECU flash and SRAM over BDM
 
 ## Supported adapters
 
-- CombiAdapter (incl. MkII and STM32 clones)
+- CombiAdapter (incl. MkII and STM32 clones). The firmware version is read
+  at connect. From CombiAdapter firmware 2.0, Identify ECU works, and erase
+  and write run the same CPU32 flash drivers as ardubdm. Both use the
+  firmware's block write (`0x4f`) and run until BGND (`0x50`). That covers the T5 28F010 erase and every
+  28F010/29F write; an SRAM restore is a block write too. Firmware 1.x, the
+  MkII and the clones keep the adapter's own `0x4c`/`0x4d` routines.
 - USB BDM
 - USB BDM MkII
 - ardubdm (ATmega328PB over USB serial; one entry per serial port found at startup)
@@ -72,9 +77,25 @@ For non-commercial use only.
 If you like the software please [donate](https://paypal.me/roffe84) 💕
 
 
+## Adapter firmware
+
+The Firmware menu flashes the firmware images built into BDM Tool.
+
+- **Upload ArduBDM** writes the ardubdm firmware to the board on the selected
+  serial port.
+- **CombiAdapter → 1.1 (legacy)** / **Latest** (2.0) writes CombiAdapter
+  firmware over the adapter's USB bootloader. It takes 10 to 15 seconds and
+  the adapter restarts when it is done. Firmware 2.0 and later reboot into
+  the bootloader on request. With older firmware the bootloader is only there
+  for about 4 seconds after power-up: unplug the adapter, plug it back in and
+  start the upload within that time. The bootloader itself is never
+  overwritten, so a failed upload can always be repeated. Only the original
+  LPC1768 CombiAdapter is supported; STM32 clones are refused.
+
 ## Identify ECU
 
-With an ardubdm connected, the "Identify ECU" button first halts the running
+With an ardubdm, or a CombiAdapter on firmware 2.0 or later, connected, the
+"Identify ECU" button first halts the running
 ECU and decodes its 68332 SIM registers into the log: CPU clock from SYNCR
 (16.78 MHz on a prepped T7), the reason for the last reset (RSR: power-on,
 external, watchdog, halt after a double bus fault, loss of clock), watchdog
@@ -89,8 +110,8 @@ Trionic 5.2 (AMD, Intel and Catalyst 28F parts). A T5.2 fitted with 28F010
 chips identifies as Trionic 5.5 (28F010 chips), since that is the flash it
 has. Write flash repeats a file smaller than the flash to
 fill it, as bdmtoy does, so a 128 KB T5.2 bin goes onto those chips twice:
-the CPU boots from one half and runs the code from the other. With an ardubdm,
-writing any Trionic 5 type first reads the chip IDs and switches to the type
+the CPU boots from one half and runs the code from the other. With either
+adapter, writing any Trionic 5 type first reads the chip IDs and switches to the type
 the chips match, as bdmtoy sizes its writes from the chips: picking Trionic
 5.2 by hand on such a box would write only the upper half and leave the one
 it boots from blank. The matching ECU type is selected and the chips are logged, and
@@ -119,6 +140,9 @@ The ardubdm PCB has a shrouded 2x5 box header with the standard CPU32 BDM pinout
 
 The 10-way IDC cable is wired 1:1; the red stripe is pin 1. At the
 adapter the plug only fits one way.
+
+`3d/index.html` is an interactive 3D view of the plug on the T5 and T7
+headers; open it in a browser (it loads three.js from a CDN).
 
 The T7 has the same standard 2x5 header, all ten pins present (BERR on pin 2
 is wired to the MCU), so the plug goes on pin for pin. 

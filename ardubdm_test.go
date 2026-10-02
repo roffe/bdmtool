@@ -62,7 +62,7 @@ func TestAM29Program(t *testing.T) {
 	a := &ArduBDM{p: f, tmo: time.Second}
 	e := &ECU{FlashAddr: 0, FlashSize: 8, DrvAddr: 0x100000, DrvPrep: ram332}
 	bin := []byte{0xFF, 0xFF, 0x12, 0x34, 0xFF, 0xFF, 0xFF, 0xFF}
-	if err := a.programAM29(e, bin, func(uint32) {}); err != nil {
+	if err := a.drv().programAM29(e, bin, func(uint32) {}); err != nil {
 		t.Fatal(err)
 	}
 	sent := f.out.Bytes()
@@ -112,7 +112,7 @@ func TestAM28Program(t *testing.T) {
 	bin := []byte{0x12, 0x34, 0xFF, 0xFF, 0x56, 0x78, 0x9A, 0xBC}
 	am28TimingCheck = false
 	defer func() { am28TimingCheck = true }()
-	if err := a.programAM28(e, bin, func(uint32) {}); err != nil {
+	if err := a.drv().programAM28(e, bin, func(uint32) {}); err != nil {
 		t.Fatal(err)
 	}
 	sent := f.out.Bytes()

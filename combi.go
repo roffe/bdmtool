@@ -9,10 +9,15 @@
 // no read loop, no queues. Long operations (readflash) stream unsolicited
 // reply packets carrying the same command code, which recv() just keeps
 // reading.
+//
+// Firmware 2.0 adds block write (0x4f) and run until BGND (0x50), so flash
+// erase and write run ardubdm's CPU32 drivers in target RAM, as ardubdm.go
+// does. Older firmware gets the original 0x4c/0x4d flow.
 package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -35,21 +40,27 @@ const (
 	termNak = 0xFF
 
 	cmdFWVersion = 0x20
+	cmdBootMode  = 0x26 // fw 2.0: reset into the bootloader
 
 	cmdBDMStop        = 0x40
 	cmdBDMReset       = 0x41
 	cmdBDMRun         = 0x42
+	cmdBDMRestart     = 0x44
 	cmdBDMReadMem     = 0x45
 	cmdBDMWriteMem    = 0x46
 	cmdBDMWriteSysReg = 0x48
+	cmdBDMReadReg     = 0x49
 	cmdBDMReadFlash   = 0x4B
 	cmdBDMEraseFlash  = 0x4C
 	cmdBDMWriteFlash  = 0x4D
+	cmdBDMWriteBlock  = 0x4F // fw 2.0
+	cmdBDMRunWait     = 0x50 // fw 2.0
 
 	cmdCANOpen = 0x80
 
-	combiBlock = 256 // CombiAdapter firmware transfer block
-	bdm2Block  = 32  // MkII firmware transfer block
+	combiBlock = 256  // CombiAdapter firmware transfer block
+	bdm2Block  = 32   // MkII firmware transfer block
+	combiLoad  = 4092 // 0x4f data per packet: fw 2.0's 4096-byte packet minus the address
 
 	sysregSR  = 0x0B
 	sysregSFC = 0x0E
@@ -68,8 +79,10 @@ type Combi struct {
 	rd     *bufio.Reader
 	iface  int
 	useEP2 bool
-	blk    uint32 // flash transfer block
-	tmo    int    // current bulk timeout, ms
+	blk    uint32    // flash transfer block
+	tmo    int       // current bulk timeout, ms
+	v2     bool      // CombiAdapter firmware 2.0+: 0x4f and 0x50
+	out    io.Writer // tests: takes what would go to the bulk OUT endpoint
 }
 
 // Open connects to a CombiAdapter.
@@ -80,7 +93,9 @@ func Open() (*Combi, error) { return openUSB("CombiAdapter", combiPID, combiBloc
 // caCombiAdapter) minus the CAN side, with a smaller transfer block.
 func OpenBDM2() (*Combi, error) { return openUSB("USB BDM MkII", bdm2PID, bdm2Block, false) }
 
-func openUSB(name string, pid uint16, blk uint32, can bool) (*Combi, error) {
+// claimUSB opens the adapter and claims its data interface without talking
+// to it: the bootloader (combiflash.go) answers none of the app's commands.
+func claimUSB(name string, pid uint16) (*Combi, error) {
 	ctx, err := libusb.NewContext()
 	if err != nil {
 		return nil, fmt.Errorf("libusb init: %w", err)
@@ -90,7 +105,7 @@ func openUSB(name string, pid uint16, blk uint32, can bool) (*Combi, error) {
 		ctx.Close()
 		return nil, fmt.Errorf("%s not found: %w", name, err)
 	}
-	c := &Combi{ctx: ctx, dev: dev, h: h, blk: blk, tmo: defaultTimeout}
+	c := &Combi{ctx: ctx, dev: dev, h: h, tmo: defaultTimeout}
 	c.iface, c.useEP2 = c.endpoints()
 	c.rd = bufio.NewReaderSize(c, 4096)
 
@@ -99,6 +114,15 @@ func openUSB(name string, pid uint16, blk uint32, can bool) (*Combi, error) {
 		c.Close()
 		return nil, fmt.Errorf("claim interface %d: %w", c.iface, err)
 	}
+	return c, nil
+}
+
+func openUSB(name string, pid uint16, blk uint32, can bool) (*Combi, error) {
+	c, err := claimUSB(name, pid)
+	if err != nil {
+		return nil, err
+	}
+	c.blk = blk
 
 	c.drain()
 	if can {
@@ -107,12 +131,14 @@ func openUSB(name string, pid uint16, blk uint32, can bool) (*Combi, error) {
 			c.Close()
 			return nil, fmt.Errorf("adapter did not respond: %w", err)
 		}
-		return c, nil
 	}
-	if _, _, err := c.Version(); err != nil {
+	major, _, err := c.Version()
+	if err != nil {
 		c.Close()
 		return nil, fmt.Errorf("adapter did not respond: %w", err)
 	}
+	// The MkII shares the protocol, not the 2.0 commands.
+	c.v2 = pid == combiPID && major >= 2
 	return c, nil
 }
 
@@ -145,6 +171,10 @@ func (c *Combi) Read(p []byte) (int, error) {
 }
 
 func (c *Combi) write(p []byte) error {
+	if c.out != nil {
+		_, err := c.out.Write(p)
+		return err
+	}
 	var err error
 	if c.useEP2 {
 		_, err = c.h.BulkTransferOut(outEP2, p, c.tmo)
@@ -226,8 +256,11 @@ func (c *Combi) recv(code byte, wantLen int) ([]byte, error) {
 	switch {
 	case hdr[0] != code:
 		return nil, fmt.Errorf("unexpected response %02X, want %02X", hdr[0], code)
-	case buf[n] != termAck:
+	case buf[n] != termAck && n == 0:
 		return nil, fmt.Errorf("command %02X failed (NAK)", code)
+	case buf[n] != termAck:
+		// Firmware NAKs never carry data: this is a lost or garbled stream.
+		return nil, fmt.Errorf("command %02X: bad terminator %02X after %d bytes", code, buf[n], n)
 	case n != wantLen:
 		return nil, fmt.Errorf("command %02X: reply len %d, want %d", code, n, wantLen)
 	}
@@ -260,6 +293,10 @@ func (c *Combi) Version() (major, minor byte, err error) {
 
 func (c *Combi) Stop() error  { _, err := c.cmd(cmdBDMStop, nil, 0); return err }
 func (c *Combi) Reset() error { _, err := c.cmd(cmdBDMReset, nil, 0); return err }
+
+// Restart resets the target with BKPT held, so it stops in BDM before its
+// first instruction.
+func (c *Combi) Restart() error { _, err := c.cmd(cmdBDMRestart, nil, 0); return err }
 
 func (c *Combi) Run(addr uint32) error {
 	_, err := c.cmd(cmdBDMRun, be32(addr), 0)
@@ -314,6 +351,19 @@ func (c *Combi) writeMem(addr, val uint32, size int) error {
 	return nil
 }
 
+// readMem reads size (1, 2 or 4) bytes at addr.
+func (c *Combi) readMem(addr uint32, size int) (uint32, error) {
+	d, err := c.cmd(cmdBDMReadMem, append([]byte{byte(size), 1}, be32(addr)...), size)
+	if err != nil {
+		return 0, err
+	}
+	var v uint32
+	for i := size - 1; i >= 0; i-- { // little-endian reply
+		v = v<<8 | uint32(d[i])
+	}
+	return v, nil
+}
+
 // readMem32 reads a long word. setAddr=false continues from the last address.
 func (c *Combi) readMem32(addr uint32, setAddr bool) (uint32, error) {
 	req := []byte{4, 0}
@@ -336,8 +386,14 @@ func (c *Combi) enterBDM(e *ECU) error {
 	if e.FlashType == "cmfi" {
 		return fmt.Errorf("%s: only the ardubdm adapter supports its on-chip flash", e.Name)
 	}
-	if err := c.Stop(); err != nil {
-		return err
+	// On 2.0, reset into BDM (BKPT held across reset) as ardubdm does: the ECU
+	// code never runs, so Prepare and the flash drivers' RAM mapping get the
+	// write-once registers (SYPCR, TRAMBAR). Halting a running ECU leaves them
+	// as its code set them, and 0x100000 is then no RAM. 1.x keeps the halt.
+	if !c.v2 || c.Restart() != nil {
+		if err := c.Stop(); err != nil {
+			return err
+		}
 	}
 	if err := c.setFunctionCode(fcSuperData); err != nil {
 		return err
@@ -365,8 +421,13 @@ func (c *Combi) ReadFlash(e *ECU, w io.Writer, prog progressFn) error {
 	if err := c.enterBDM(e); err != nil {
 		return err
 	}
-	hdr := append(be32(e.FlashAddr), be32(e.FlashSize)...)
-	for done := uint32(0); done < e.FlashSize; done += c.blk {
+	return c.dump(e.FlashAddr, e.FlashSize, w, prog)
+}
+
+// dump streams size bytes (a multiple of c.blk) from addr with 0x4b.
+func (c *Combi) dump(addr, size uint32, w io.Writer, prog progressFn) error {
+	hdr := append(be32(addr), be32(size)...)
+	for done := uint32(0); done < size; done += c.blk {
 		var (
 			data []byte
 			err  error
@@ -401,6 +462,10 @@ func (c *Combi) EraseFlash(e *ECU, prog progressFn) error {
 }
 
 func (c *Combi) eraseFlash(e *ECU, prog progressFn) error {
+	// 29F chips erase themselves, 0x4c only waits; 28F needs every pulse driven.
+	if c.drivers(e) && e.FlashType == "28f010" {
+		return (&flasher{cpu32: c}).eraseAM28(e, prog)
+	}
 	req := append([]byte(e.FlashType), append(be32(e.FlashAddr), be32(e.FlashSize)...)...)
 	if err := c.send(cmdBDMEraseFlash, req); err != nil {
 		return err
@@ -442,6 +507,13 @@ func (c *Combi) WriteFlash(e *ECU, bin []byte, erase bool, prog progressFn) erro
 		if err := c.eraseFlash(e, prog); err != nil {
 			return err
 		}
+	}
+	if c.drivers(e) {
+		f := &flasher{cpu32: c}
+		if e.FlashType == "28f010" {
+			return f.programAM28(e, bin, prog)
+		}
+		return f.programAM29(e, bin, prog)
 	}
 	req := append([]byte(e.FlashType), append(be32(e.FlashAddr), be32(e.FlashSize)...)...)
 	if _, err := c.cmd(cmdBDMWriteFlash, req, 0); err != nil {
@@ -516,6 +588,9 @@ func (c *Combi) WriteSRAM(e *ECU, snap []byte, prog progressFn) error {
 	if err := c.enterSRAM(e); err != nil {
 		return err
 	}
+	if c.v2 {
+		return c.load(e.SRAMAddr, snap, prog)
+	}
 	for done := uint32(0); done < sramBytes(e); done += 4 {
 		// The file holds 68K byte order; writeMem sends the value big-endian
 		// too, so this round-trips what ReadSRAM produced.
@@ -526,6 +601,85 @@ func (c *Combi) WriteSRAM(e *ECU, snap []byte, prog progressFn) error {
 		prog(done + 4)
 	}
 	return nil
+}
+
+// combiV2 is a CombiAdapter on firmware 2.0+, which can also identify the
+// ECU as ardubdm does: 0x50 lets it leave the ECU running afterwards, where
+// 1.x's 0x42 never sends GO. 1.x stays a plain *Combi, so the UI behaves as
+// it always did there.
+type combiV2 struct{ *Combi }
+
+// openCombi opens a CombiAdapter for the UI.
+func openCombi() (Adapter, error) {
+	c, err := Open()
+	if err != nil {
+		return nil, err
+	}
+	if c.v2 {
+		return combiV2{c}, nil
+	}
+	return c, nil
+}
+
+func (c combiV2) Identify() (*ECU, string, error) { return identify(c) }
+func (c combiV2) Info() (string, error)           { return info(c) }
+
+// Run resumes the target at addr (0: where it stopped): 0x50 without waiting.
+func (c combiV2) Run(addr uint32) error {
+	_, err := c.cmd(cmdBDMRunWait, append(be32(addr), be32(0)...), 0)
+	return err
+}
+
+// drivers reports whether e's flash is erased and written by ardubdm's CPU32
+// drivers in target RAM: firmware 2.0, and an ECU and chips they cover.
+func (c *Combi) drivers(e *ECU) bool {
+	return c.v2 && e.DrvAddr != 0 && (e.FlashType == "28f010" || e.FlashType == "29f010" || e.FlashType == "29f400")
+}
+
+// The cpu32 methods the flash drivers need; writeMem and writeSysReg are above.
+
+// load block-writes data to addr (0x4f).
+func (c *Combi) load(addr uint32, data []byte, prog progressFn) error {
+	for done := 0; done < len(data); {
+		n := min(combiLoad, len(data)-done)
+		if _, err := c.cmd(cmdBDMWriteBlock, append(be32(addr+uint32(done)), data[done:done+n]...), 0); err != nil {
+			return err
+		}
+		done += n
+		prog(uint32(done))
+	}
+	return nil
+}
+
+// block reads n bytes at addr; 0x4b moves whole blocks, so it reads up to the next one.
+func (c *Combi) block(addr, n uint32) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := c.dump(addr, (n+c.blk-1)/c.blk*c.blk, &buf, func(uint32) {}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes()[:n], nil
+}
+
+// readReg reads a data or address register: 0-7 = D0-D7, 8-15 = A0-A7.
+func (c *Combi) readReg(n byte) (uint32, error) {
+	d, err := c.cmd(cmdBDMReadReg, []byte{n}, 4)
+	if err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(d), nil
+}
+
+// RunWaitFor runs from addr (0: where it stopped) until the target executes
+// BGND, at most limit, and returns D0 (0x50).
+func (c *Combi) RunWaitFor(addr uint32, limit time.Duration) (uint32, error) {
+	ms := uint32(limit.Milliseconds())
+	c.tmo = int(ms) + 2000
+	defer func() { c.tmo = defaultTimeout }()
+	d, err := c.cmd(cmdBDMRunWait, append(be32(addr), be32(ms)...), 4)
+	if err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(d), nil
 }
 
 func be32(v uint32) []byte {

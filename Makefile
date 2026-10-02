@@ -1,14 +1,22 @@
-.PHONY: bdmtool appimage clean run
+.PHONY: bdmtool appimage clean run firmwares
 
 VERSION=$(shell sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml)
 APPIMAGETOOL=.tmp/appimagetool
 
 default: bdmtool
 
-run:
+firmwares/ardubdm.hex: $(HOME)/Documents/PlatformIO/Projects/ardubdm/.pio/build/ATmega328PB/firmware.hex
+	cp $< $@
+
+firmwares/combiadapter.bin: $(HOME)/devel/combi_reverse/firmware2.0/combi-firmware-2.0.bin
+	cp $< $@
+
+firmwares: firmwares/ardubdm.hex firmwares/combiadapter.bin
+
+run: firmwares
 	go run -tags=wayland .
 
-bdmtool:
+bdmtool: firmwares
 	go build -ldflags '-s -w' -o bdmtool .
 
 clean:
@@ -20,7 +28,7 @@ $(APPIMAGETOOL):
 	chmod +x $@
 
 # ponytail: no bundled .so files; libusb-1.0 and gtk3 ship with every desktop distro
-appimage: bdmtool $(APPIMAGETOOL)
+appimage: firmwares bdmtool $(APPIMAGETOOL)
 	rm -rf .tmp/AppDir
 	mkdir -p .tmp/AppDir/usr/bin .tmp/AppDir/usr/share/icons
 	cp bdmtool .tmp/AppDir/usr/bin/

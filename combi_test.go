@@ -137,3 +137,94 @@ func TestMirror(t *testing.T) {
 		}
 	}
 }
+
+// TestCombiDriverProgram: on firmware 2.0 a 29F write runs ardubdm's CPU32
+// driver through 0x4f/0x50: driver upload and readback (0x4b, a whole block),
+// SR, one parameter block, one run, the result block.
+func TestCombiDriverProgram(t *testing.T) {
+	var in, out bytes.Buffer
+	reply := func(code byte, data []byte) { in.Write(packet(code, data)) }
+	for range 3 {
+		reply(cmdBDMWriteMem, nil) // resetAM29
+	}
+	reply(cmdBDMWriteMem, nil)   // RAMBAR
+	reply(cmdBDMWriteBlock, nil) // driver
+	reply(cmdBDMReadFlash, append(bytes.Clone(am29Driver), make([]byte, combiBlock-len(am29Driver))...))
+	reply(cmdBDMWriteSysReg, nil)                    // SR
+	reply(cmdBDMWriteBlock, nil)                     // parameters + data
+	reply(cmdBDMRunWait, []byte{0, 0, 0, 0})         // D0
+	reply(cmdBDMReadFlash, make([]byte, combiBlock)) // result 0
+	for range 3 {
+		reply(cmdBDMWriteMem, nil) // resetAM29
+	}
+	c := &Combi{rd: bufio.NewReader(&in), out: &out, blk: combiBlock, tmo: defaultTimeout, v2: true}
+	e := &ECU{FlashType: "29f400", FlashAddr: 0, FlashSize: 8, DrvAddr: 0x100000, DrvPrep: ram332}
+	bin := []byte{0xFF, 0xFF, 0x12, 0x34, 0xFF, 0xFF, 0xFF, 0xFF}
+	if err := (&flasher{cpu32: c}).programAM29(e, bin, func(uint32) {}); err != nil {
+		t.Fatal(err)
+	}
+	params := append([]byte{0, 0, 0, 0, 0, 0, 0xAA, 0xAA, 0, 0, 0x55, 0x54, 0, 0xFF, 0xFA, 0x27, 0, 4, 0, 0}, bin...)
+	for _, want := range [][]byte{
+		packet(cmdBDMWriteBlock, append(be32(0x100000), am29Driver...)),
+		packet(cmdBDMWriteBlock, append(be32(0x100060), params...)),
+		packet(cmdBDMRunWait, append(be32(0x100000), be32(2000)...)),
+		packet(cmdBDMReadFlash, append(be32(0x100060), be32(combiBlock)...)),
+	} {
+		if !bytes.Contains(out.Bytes(), want) {
+			t.Fatalf("missing % 02X", want)
+		}
+	}
+	if in.Len() != 0 {
+		t.Fatalf("%d reply bytes left unread", in.Len())
+	}
+
+	// Gate: 2.0 and an ECU the drivers cover; everything else keeps 0x4c/0x4d.
+	if !c.drivers(ecuByName("Trionic 5.5 (28F010 chips)")) || c.drivers(ecuByName("Volvo CEM")) {
+		t.Fatal("drivers() on 2.0")
+	}
+	c.v2 = false
+	if c.drivers(ecuByName("Trionic 7")) {
+		t.Fatal("drivers() on 1.x")
+	}
+}
+
+// TestCombiIdentify: on firmware 2.0 the CombiAdapter identifies a T5.5 with
+// Intel 28F010s through 0x44/0x45/0x46 and leaves it running with 0x50 (ms 0).
+// On 1.x it must not offer Identify at all.
+func TestCombiIdentify(t *testing.T) {
+	var in, out bytes.Buffer
+	reply := func(code byte, data []byte) { in.Write(packet(code, data)) }
+	acks := func(code byte, n int) {
+		for range n {
+			reply(code, nil)
+		}
+	}
+	reply(cmdBDMRestart, nil)
+	acks(cmdBDMWriteSysReg, 2)               // SFC, DFC
+	reply(cmdBDMReadMem, []byte{0xCF, 0x00}) // 68332 SIMCR
+	acks(cmdBDMWriteMem, 10+3)               // probe prep, autoselect
+	reply(cmdBDMReadMem, []byte{0x89, 0x89}) // Intel
+	reply(cmdBDMReadMem, []byte{0xB4, 0xB4}) // 28F010
+	acks(cmdBDMWriteMem, 4)                  // resets, Vpp off
+	reply(cmdBDMRestart, nil)
+	reply(cmdBDMRunWait, nil)
+	c := combiV2{&Combi{rd: bufio.NewReader(&in), out: &out, blk: combiBlock, tmo: defaultTimeout, v2: true}}
+	e, chips, err := c.Identify()
+	if err != nil || e.Name != "Trionic 5.5 (28F010 chips)" {
+		t.Fatalf("Identify = %v, %q, %v", e, chips, err)
+	}
+	if !bytes.HasSuffix(out.Bytes(), packet(cmdBDMRunWait, append(be32(0), be32(0)...))) {
+		t.Fatalf("did not end with GO: % 02X", out.Bytes())
+	}
+	if in.Len() != 0 {
+		t.Fatalf("%d reply bytes left unread", in.Len())
+	}
+
+	var a Adapter = c.Combi
+	if _, ok := a.(Identifier); ok {
+		t.Fatal("a 1.x CombiAdapter must not offer Identify")
+	}
+	if _, ok := Adapter(c).(Identifier); !ok {
+		t.Fatal("combiV2 must offer Identify")
+	}
+}

@@ -86,9 +86,28 @@ const (
 type ArduBDM struct {
 	p   io.ReadWriteCloser
 	tmo time.Duration
+}
+
+// cpu32 is what the CPU32 flash drivers need from an adapter: block
+// transfers to and from target RAM, registers, and run until BGND. ardubdm
+// has them, and so does the CombiAdapter from firmware 2.0.
+type cpu32 interface {
+	load(addr uint32, data []byte, prog progressFn) error
+	block(addr, n uint32) ([]byte, error)
+	writeMem(addr, val uint32, size int) error
+	writeSysReg(reg byte, v uint32) error
+	readReg(n byte) (uint32, error)
+	RunWaitFor(addr uint32, limit time.Duration) (uint32, error)
+}
+
+// flasher runs the CPU32 flash drivers through an adapter.
+type flasher struct {
+	cpu32
 	// 28F driver delay counts, calibrated by am28Setup against wall time.
 	d10us, d6us, d10ms uint16
 }
+
+func (a *ArduBDM) drv() *flasher { return &flasher{cpu32: a} }
 
 // arduPorts lists the USB serial ports the adapter could be on.
 func arduPorts() []string {
@@ -208,7 +227,6 @@ func byteW(addr uint32, v byte) req {
 	return req{frame(grpMemory, cmdWriteByte, fmt.Sprintf("%s%02X", hex32(addr), v)), 0}
 }
 func wordR(addr uint32) req { return req{frame(grpMemory, cmdReadWord, hex32(addr)), 4} }
-func byteR(addr uint32) req { return req{frame(grpMemory, cmdReadByte, hex32(addr)), 2} }
 
 // response reads one reply: the flag byte alone, or n hex characters, CRLF and
 // the flag byte. A failed command sends only the error flag.
@@ -407,8 +425,11 @@ func (a *ArduBDM) RunWaitFor(addr uint32, limit time.Duration) (uint32, error) {
 	return uint32(v), nil
 }
 
-func (a *ArduBDM) readAReg(n byte) (uint32, error) {
-	r, err := a.cmd(grpRegs, 'a', fmt.Sprintf("%02X", 8+n), 8)
+func (a *ArduBDM) readAReg(n byte) (uint32, error) { return a.readReg(8 + n) }
+
+// readReg reads a data or address register: 0-7 = D0-D7, 8-15 = A0-A7.
+func (a *ArduBDM) readReg(n byte) (uint32, error) {
+	r, err := a.cmd(grpRegs, 'a', fmt.Sprintf("%02X", n), 8)
 	if err != nil {
 		return 0, err
 	}
@@ -528,11 +549,12 @@ type flashAlgo struct {
 
 // algo picks the host-side erase/program routines for the ECU's flash chips.
 func (a *ArduBDM) algo(e *ECU) (flashAlgo, error) {
+	f := a.drv()
 	switch e.FlashType {
 	case "29f010", "29f400":
-		return flashAlgo{a.eraseAM29, a.programAM29}, nil
+		return flashAlgo{a.eraseAM29, f.programAM29}, nil
 	case "28f010":
-		return flashAlgo{a.eraseAM28, a.programAM28}, nil
+		return flashAlgo{f.eraseAM28, f.programAM28}, nil
 	case "cmfi":
 		return flashAlgo{a.eraseCMFI, a.programCMFI}, nil
 	}
@@ -597,9 +619,15 @@ func am29(cmd uint16) []req {
 	return []req{wordW(0xAAAA, 0xAAAA), wordW(0x5554, 0x5555), wordW(0xAAAA, cmd)}
 }
 
-func (a *ArduBDM) resetAM29() error {
-	_, err := a.batch(am29(0xF0F0))
-	return err
+func (a *ArduBDM) resetAM29() error { return a.drv().resetAM29() }
+
+func (f *flasher) resetAM29() error {
+	for _, w := range [][2]uint32{{0xAAAA, 0xAAAA}, {0x5554, 0x5555}, {0xAAAA, 0xF0F0}} {
+		if err := f.writeMem(w[0], w[1], 2); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // eraseAM29 issues chip erase and polls the first word: data polling keeps it
@@ -658,15 +686,15 @@ var am29Driver []byte
 // the ECU's SRAM: per run one block write carries the parameter block plus up
 // to am29DrvData bytes, then the target programs them at bus speed and drops
 // back into BDM. All-0xFFFF blocks are skipped: programming only clears bits.
-func (a *ArduBDM) programAM29(e *ECU, bin []byte, prog progressFn) error {
-	if err := a.resetAM29(); err != nil {
+func (f *flasher) programAM29(e *ECU, bin []byte, prog progressFn) error {
+	if err := f.resetAM29(); err != nil {
 		return err
 	}
-	if err := a.uploadDriver(e, am29Driver); err != nil {
+	if err := f.uploadDriver(e, am29Driver); err != nil {
 		return err
 	}
 	noprog := func(uint32) {}
-	if err := a.writeSysReg(sysregSR, 0x2700); err != nil { // interrupts off while our code runs
+	if err := f.writeSysReg(sysregSR, 0x2700); err != nil { // interrupts off while our code runs
 		return err
 	}
 	blk := make([]byte, arduLoad)
@@ -685,54 +713,90 @@ func (a *ArduBDM) programAM29(e *ECU, bin []byte, prog progressFn) error {
 		binary.BigEndian.PutUint16(blk[16:], uint16(n/2))
 		binary.BigEndian.PutUint16(blk[18:], 0)
 		copy(blk[am29DrvHeader:], data)
-		if err := a.load(e.DrvAddr+am29DrvParams, blk[:am29DrvHeader+n], noprog); err != nil {
+		if err := f.load(e.DrvAddr+am29DrvParams, blk[:am29DrvHeader+n], noprog); err != nil {
 			return err
 		}
-		if _, err := a.RunWait(e.DrvAddr); err != nil {
-			a.resetAM29()
+		if _, err := f.RunWaitFor(e.DrvAddr, 2*time.Second); err != nil {
+			f.resetAM29()
 			return fmt.Errorf("flash driver did not return at %08X: %w", e.FlashAddr+done, err)
 		}
 		// The driver reports through its parameter block, read back with a block dump.
-		res, err := a.block(e.DrvAddr+am29DrvParams, am29DrvHeader)
+		res, err := f.block(e.DrvAddr+am29DrvParams, am29DrvHeader)
 		if err != nil {
-			a.resetAM29()
+			f.resetAM29()
 			return err
 		}
 		if binary.BigEndian.Uint16(res[18:]) != 0 {
-			a.logDriverState(e, done)
-			a.resetAM29()
+			f.logDriverState(e, done)
+			f.resetAM29()
 			return fmt.Errorf("flash program failed at %08X", binary.BigEndian.Uint32(res[0:]))
 		}
 		done += n
 		prog(done)
 	}
-	return a.resetAM29()
+	return f.resetAM29()
 }
 
 // logDriverState dumps what the flash driver left behind after a failure:
 // its registers, the flash around the failing word, and its parameter block.
-func (a *ArduBDM) logDriverState(e *ECU, done uint32) {
+func (f *flasher) logDriverState(e *ECU, done uint32) {
 	regs := ""
 	for i, n := range []string{"D0", "D1", "D2", "D3", "", "", "", "", "A0", "A1", "A2", "A3", "A4"} {
 		if n == "" {
 			continue
 		}
-		r, err := a.cmd(grpRegs, 'a', fmt.Sprintf("%02X", i), 8)
-		if err != nil {
-			r = []byte("????????")
+		if r, err := f.readReg(byte(i)); err == nil {
+			regs += fmt.Sprintf("%s=%08X ", n, r)
+		} else {
+			regs += n + "=???????? "
 		}
-		regs += fmt.Sprintf("%s=%s ", n, r)
 	}
 	debugLog("driver regs: %s", regs)
-	if fl, err := a.block(e.FlashAddr+done, 16); err == nil {
+	if fl, err := f.block(e.FlashAddr+done, 16); err == nil {
 		debugLog("flash at %08X: % X", e.FlashAddr+done, fl)
 	}
-	if pb, err := a.block(e.DrvAddr+am29DrvParams, 32); err == nil {
+	if pb, err := f.block(e.DrvAddr+am29DrvParams, 32); err == nil {
 		debugLog("params at %08X: % X", e.DrvAddr+am29DrvParams, pb)
 	}
 }
 
-// Identify works out which ECU is attached from its CPU and flash chips, the
+// prober is what Identify and Info need from an adapter: reset into BDM,
+// halt, resume, and byte/word memory access.
+type prober interface {
+	Restart() error
+	Stop() error
+	Run(addr uint32) error
+	setFunctionCode(fc uint32) error
+	writeMem(addr, val uint32, size int) error
+	readMem(addr uint32, size int) (uint32, error)
+}
+
+func (a *ArduBDM) Identify() (*ECU, string, error) { return identify(a) }
+func (a *ArduBDM) Info() (string, error)           { return info(a) }
+
+// readMem reads a byte (size 1) or a word.
+func (a *ArduBDM) readMem(addr uint32, size int) (uint32, error) {
+	code, n := byte(cmdReadWord), 4
+	if size == 1 {
+		code, n = cmdReadByte, 2
+	}
+	r, err := a.cmd(grpMemory, code, hex32(addr), n)
+	if err != nil {
+		return 0, err
+	}
+	return uint32(unhex16(r)), nil
+}
+
+func writeAll(p prober, ws ...memWrite) error {
+	for _, w := range ws {
+		if err := p.writeMem(w.addr, w.val, w.size); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// identify works out which ECU is attached from its CPU and flash chips, the
 // way Just4Trionic does at connect. Reset into BDM, then: a 68377 module
 // configuration register means Trionic 8. Otherwise apply Just4Trionic's
 // 68332 prep (boot chip select over 1 MB at 0, byte-lane write selects,
@@ -740,18 +804,18 @@ func (a *ArduBDM) logDriverState(e *ECU, done uint32) {
 // unlock, 28F chips take the final 0x90 alone, both then answer with
 // manufacturer and device codes at 0 and 2. Returns the matching ECU table
 // entry and a description of the chips.
-func (a *ArduBDM) Identify() (*ECU, string, error) {
-	if err := a.Restart(); err != nil {
+func identify(p prober) (*ECU, string, error) {
+	if err := p.Restart(); err != nil {
 		return nil, "", fmt.Errorf("target will not reset into BDM: %w", err)
 	}
-	if err := a.setFunctionCode(fcSuperData); err != nil {
+	if err := p.setFunctionCode(fcSuperData); err != nil {
 		return nil, "", err
 	}
-	r, err := a.cmd(grpMemory, cmdReadWord, hex32(0xfffa00), 4)
+	mcr, err := p.readMem(0xfffa00, 2)
 	if err != nil {
 		return nil, "", err
 	}
-	if mcr := unhex16(r); mcr&0x7e4f == 0x7e4f { // 68377 MCR after reset, per Just4Trionic
+	if mcr&0x7e4f == 0x7e4f { // 68377 MCR after reset, per Just4Trionic
 		return ecuByName("Trionic 8"), fmt.Sprintf("MC68377 (MCR %04X)", mcr), nil
 	}
 	prep := []memWrite{
@@ -761,31 +825,34 @@ func (a *ArduBDM) Identify() (*ECU, string, error) {
 		w16(0xfffa54, 0x0007), w16(0xfffa56, 0x5030),
 		w16(0xfffc14, 0x0040), w8(0xfffc17, 0x40), // Vpp on: 28F chips only answer with it
 	}
-	for _, w := range prep {
-		if err := a.writeMem(w.addr, w.val, w.size); err != nil {
-			return nil, "", err
-		}
+	if err := writeAll(p, prep...); err != nil {
+		return nil, "", err
 	}
 	time.Sleep(10 * time.Millisecond)
-	ids, err := a.batch([]req{
-		wordW(0xaaaa, 0xaaaa), wordW(0x5554, 0x5555), wordW(0xaaaa, 0x9090),
-		wordR(0), wordR(2),
-		wordW(0xaaaa, 0xf0f0), wordW(0, 0xffff), wordW(0, 0xffff), // 29F reset, 28F reset
-		wordW(0xfffc14, 0x0000), // Vpp off
-	})
+	if err := writeAll(p, w16(0xaaaa, 0xaaaa), w16(0x5554, 0x5555), w16(0xaaaa, 0x9090)); err != nil {
+		return nil, "", err
+	}
+	mfr, err := p.readMem(0, 2)
 	if err != nil {
 		return nil, "", err
 	}
-	mfr, dev := unhex16(ids[3]), unhex16(ids[4])
+	dev, err := p.readMem(2, 2)
+	if err != nil {
+		return nil, "", err
+	}
+	// 29F reset, 28F reset, Vpp off
+	if err := writeAll(p, w16(0xaaaa, 0xf0f0), w16(0, 0xffff), w16(0, 0xffff), w16(0xfffc14, 0x0000)); err != nil {
+		return nil, "", err
+	}
 	desc := fmt.Sprintf("flash ID %04X/%04X", mfr, dev)
 	// Leave the ECU running its own code with BDM enabled (reset with BKPT
 	// held, then go), so a later halt sees the ECU's real setup rather than
 	// the probe prep above, and any flash operation can still get in.
-	if err := a.Restart(); err == nil {
-		_ = a.Run(0)
+	if err := p.Restart(); err == nil {
+		_ = p.Run(0)
 	}
 	type match struct {
-		mfr, dev   uint16
+		mfr, dev   uint32
 		ecu, chips string
 	}
 	for _, m := range []match{
@@ -815,30 +882,36 @@ func (a *ArduBDM) Identify() (*ECU, string, error) {
 // It halts the running ECU first so the values are the ECU's own setup; if
 // it cannot be halted (BDM not enabled at its last reset) it resets into BDM
 // and reports the reset defaults, saying so.
-func (a *ArduBDM) Info() (string, error) {
+func info(p prober) (string, error) {
 	state := "halted, ECU's own setup"
-	if err := a.Stop(); err != nil {
-		if err := a.Restart(); err != nil {
+	if err := p.Stop(); err != nil {
+		if err := p.Restart(); err != nil {
 			return "", fmt.Errorf("target will not enter BDM: %w", err)
 		}
 		state = "after reset into BDM (reset defaults, the ECU code has not run)"
 	}
-	if err := a.setFunctionCode(fcSuperData); err != nil {
+	if err := p.setFunctionCode(fcSuperData); err != nil {
 		return "", err
 	}
-	var reqs []req
-	reqs = append(reqs, wordR(0xfffa00), wordR(0xfffa04), byteR(0xfffa07), byteR(0xfffa21),
-		wordR(0xfffa44), wordR(0xfffa46))
+	type reg struct {
+		addr uint32
+		size int
+	}
+	regs := []reg{{0xfffa00, 2}, {0xfffa04, 2}, {0xfffa07, 1}, {0xfffa21, 1}, {0xfffa44, 2}, {0xfffa46, 2}}
 	for i := 0; i < 12; i++ { // CSBOOT, CS0..CS10
-		reqs = append(reqs, wordR(0xfffa48+uint32(4*i)), wordR(0xfffa4a+uint32(4*i)))
+		regs = append(regs, reg{0xfffa48 + uint32(4*i), 2}, reg{0xfffa4a + uint32(4*i), 2})
 	}
-	r, err := a.batch(reqs)
-	if err != nil {
-		return "", err
+	r := make([]uint16, len(regs))
+	for i, g := range regs {
+		v, err := p.readMem(g.addr, g.size)
+		if err != nil {
+			return "", err
+		}
+		r[i] = uint16(v)
 	}
-	simcr, syncr := unhex16(r[0]), unhex16(r[1])
-	rsr, sypcr := unhex16(r[2]), unhex16(r[3])
-	cspar0, cspar1 := unhex16(r[4]), unhex16(r[5])
+	simcr, syncr := r[0], r[1]
+	rsr, sypcr := r[2], r[3]
+	cspar0, cspar1 := r[4], r[5]
 	var b strings.Builder
 	fmt.Fprintf(&b, "SIM registers (%s)\n", state)
 	if simcr&0x7e4f == 0x7e4f {
@@ -870,7 +943,7 @@ func (a *ArduBDM) Info() (string, error) {
 	fmt.Fprintf(&b, "  chip selects (CSPAR0 %04X CSPAR1 %04X):\n", cspar0, cspar1)
 	sizes := []string{"2K", "8K", "16K", "64K", "128K", "256K", "512K", "1M"}
 	for i := 0; i < 12; i++ {
-		bar, or := unhex16(r[6+2*i]), unhex16(r[7+2*i])
+		bar, or := r[6+2*i], r[7+2*i]
 		name := "CSBOOT"
 		pin := cspar0 & 3
 		if i > 0 {
@@ -900,19 +973,19 @@ func (a *ArduBDM) Info() (string, error) {
 }
 
 // uploadDriver maps the driver RAM, writes drv there and reads it back.
-func (a *ArduBDM) uploadDriver(e *ECU, drv []byte) error {
+func (f *flasher) uploadDriver(e *ECU, drv []byte) error {
 	if e.DrvAddr == 0 {
 		return fmt.Errorf("%s: no RAM defined for the flash driver", e.Name)
 	}
 	for _, w := range e.DrvPrep {
-		if err := a.writeMem(w.addr, w.val, w.size); err != nil {
+		if err := f.writeMem(w.addr, w.val, w.size); err != nil {
 			return err
 		}
 	}
-	if err := a.load(e.DrvAddr, drv, func(uint32) {}); err != nil {
+	if err := f.load(e.DrvAddr, drv, func(uint32) {}); err != nil {
 		return err
 	}
-	got, err := a.block(e.DrvAddr, uint32(len(drv)))
+	got, err := f.block(e.DrvAddr, uint32(len(drv)))
 	if err != nil {
 		return err
 	}
@@ -950,33 +1023,36 @@ var am28Driver []byte
 var am28TimingCheck = true // tests run against a fake port that answers instantly
 
 // resetAM28 puts both chips in read mode: 0xFF twice.
-func (a *ArduBDM) resetAM28(e *ECU) error {
-	_, err := a.batch([]req{wordW(e.FlashAddr, 0xFFFF), wordW(e.FlashAddr, 0xFFFF)})
-	return err
+func (f *flasher) resetAM28(e *ECU) error {
+	if err := f.writeMem(e.FlashAddr, 0xFFFF, 2); err != nil {
+		return err
+	}
+	return f.writeMem(e.FlashAddr, 0xFFFF, 2)
 }
 
-// am28Run uploads one parameter block plus data and runs the driver; returns
+// am28Run uploads one parameter block plus data and runs the driver over
+// words data words; data nil reuses what the last run left at +24. Returns
 // the header it left behind: address at +0, result at +12, stat at +14.
-func (a *ArduBDM) am28Run(e *ECU, mode uint16, addr, end uint32, data []byte, limit time.Duration) ([]byte, error) {
+func (f *flasher) am28Run(e *ECU, mode uint16, addr, end uint32, words int, data []byte, limit time.Duration) ([]byte, error) {
 	blk := make([]byte, am28DrvHeader+len(data))
 	binary.BigEndian.PutUint32(blk[0:], addr)
 	binary.BigEndian.PutUint32(blk[4:], end)
 	binary.BigEndian.PutUint16(blk[8:], mode)
-	binary.BigEndian.PutUint16(blk[10:], uint16(len(data)/2))
-	if a.d10ms == 0 {
-		a.d10us, a.d6us, a.d10ms = am28Delay10us, am28Delay6us, am28Delay10ms
+	binary.BigEndian.PutUint16(blk[10:], uint16(words))
+	if f.d10ms == 0 {
+		f.d10us, f.d6us, f.d10ms = am28Delay10us, am28Delay6us, am28Delay10ms
 	}
-	binary.BigEndian.PutUint16(blk[16:], a.d10us)
-	binary.BigEndian.PutUint16(blk[18:], a.d6us)
-	binary.BigEndian.PutUint16(blk[20:], a.d10ms)
+	binary.BigEndian.PutUint16(blk[16:], f.d10us)
+	binary.BigEndian.PutUint16(blk[18:], f.d6us)
+	binary.BigEndian.PutUint16(blk[20:], f.d10ms)
 	copy(blk[am28DrvHeader:], data)
-	if err := a.load(e.DrvAddr+am28DrvParams, blk, func(uint32) {}); err != nil {
+	if err := f.load(e.DrvAddr+am28DrvParams, blk, func(uint32) {}); err != nil {
 		return nil, err
 	}
-	if _, err := a.RunWaitFor(e.DrvAddr, limit); err != nil {
+	if _, err := f.RunWaitFor(e.DrvAddr, limit); err != nil {
 		return nil, fmt.Errorf("flash driver did not return (%s): %w", modeName(mode), err)
 	}
-	res, err := a.block(e.DrvAddr+am28DrvParams, am28DrvHeader)
+	res, err := f.block(e.DrvAddr+am28DrvParams, am28DrvHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -999,16 +1075,16 @@ func modeName(mode uint16) string {
 // am28Setup maps the driver RAM, uploads and verifies the driver, and
 // calibrates its delay loop: 100 x "10 ms" with the nominal counts is timed
 // against the wall clock and the counts scaled so a pulse really is 10 ms.
-func (a *ArduBDM) am28Setup(e *ECU) error {
-	if err := a.uploadDriver(e, am28Driver); err != nil {
+func (f *flasher) am28Setup(e *ECU) error {
+	if err := f.uploadDriver(e, am28Driver); err != nil {
 		return err
 	}
-	if err := a.writeSysReg(sysregSR, 0x2700); err != nil {
+	if err := f.writeSysReg(sysregSR, 0x2700); err != nil {
 		return err
 	}
-	a.d10us, a.d6us, a.d10ms = am28Delay10us, am28Delay6us, am28Delay10ms
+	f.d10us, f.d6us, f.d10ms = am28Delay10us, am28Delay6us, am28Delay10ms
 	t := time.Now()
-	if _, err := a.am28Run(e, am28ModeTime, 0, 0, nil, 10*time.Second); err != nil {
+	if _, err := f.am28Run(e, am28ModeTime, 0, 0, 0, nil, 10*time.Second); err != nil {
 		return err
 	}
 	d := time.Since(t)
@@ -1017,54 +1093,57 @@ func (a *ArduBDM) am28Setup(e *ECU) error {
 	}
 	if am28TimingCheck {
 		scale := float64(time.Second) / float64(d)
-		a.d10us = uint16(float64(am28Delay10us) * scale)
-		a.d6us = uint16(float64(am28Delay6us) * scale)
-		a.d10ms = uint16(float64(am28Delay10ms) * scale)
+		f.d10us = uint16(float64(am28Delay10us) * scale)
+		f.d6us = uint16(float64(am28Delay6us) * scale)
+		f.d10ms = uint16(float64(am28Delay10ms) * scale)
 	}
 	debugLog("28F driver delay check: 100 x 10 ms took %v, counts scaled to %d/%d/%d",
-		d.Round(time.Millisecond), a.d10us, a.d6us, a.d10ms)
+		d.Round(time.Millisecond), f.d10us, f.d6us, f.d10ms)
 	return nil
 }
 
 // programAM28 programs the image block by block through the driver. Blocks
 // that are all 0xFF are skipped: on erased flash they are no-ops.
-func (a *ArduBDM) programAM28(e *ECU, bin []byte, prog progressFn) error {
-	if err := a.resetAM28(e); err != nil {
+func (f *flasher) programAM28(e *ECU, bin []byte, prog progressFn) error {
+	if err := f.resetAM28(e); err != nil {
 		return err
 	}
-	if err := a.am28Setup(e); err != nil {
+	if err := f.am28Setup(e); err != nil {
 		return err
 	}
 	for done := uint32(0); done < e.FlashSize; {
 		n := min(uint32(am28DrvData), e.FlashSize-done)
 		data := bin[done : done+n]
 		if !erased(data) {
-			if _, err := a.am28Run(e, am28ModeProg, e.FlashAddr+done, 0, data, 5*time.Second); err != nil {
-				a.resetAM28(e)
+			if _, err := f.am28Run(e, am28ModeProg, e.FlashAddr+done, 0, len(data)/2, data, 5*time.Second); err != nil {
+				f.resetAM28(e)
 				return err
 			}
 		}
 		done += n
 		prog(done)
 	}
-	return a.resetAM28(e)
+	return f.resetAM28(e)
 }
 
 // eraseAM28: program everything to 0x0000, then erase pulses over the chip.
-func (a *ArduBDM) eraseAM28(e *ECU, prog progressFn) error {
-	if err := a.resetAM28(e); err != nil {
+func (f *flasher) eraseAM28(e *ECU, prog progressFn) error {
+	if err := f.resetAM28(e); err != nil {
 		return err
 	}
-	if err := a.am28Setup(e); err != nil {
+	if err := f.am28Setup(e); err != nil {
 		return err
 	}
+	// The zeros go up with the first run only: the driver never writes its
+	// data area, so later runs just send a new header.
 	zeros := make([]byte, am28DrvData)
 	for done := uint32(0); done < e.FlashSize; {
 		n := min(uint32(am28DrvData), e.FlashSize-done)
-		if _, err := a.am28Run(e, am28ModeProg, e.FlashAddr+done, 0, zeros[:n], 5*time.Second); err != nil {
-			a.resetAM28(e)
+		if _, err := f.am28Run(e, am28ModeProg, e.FlashAddr+done, 0, int(n/2), zeros, 5*time.Second); err != nil {
+			f.resetAM28(e)
 			return fmt.Errorf("pre-erase zero fill: %w", err)
 		}
+		zeros = nil
 		done += n
 		prog(done / 2)
 	}
@@ -1073,9 +1152,9 @@ func (a *ArduBDM) eraseAM28(e *ECU, prog progressFn) error {
 	// 1000 pulses x 10 ms plus verify reads: allow a generous minute each.
 	chunk := e.FlashSize / 16
 	for done := uint32(0); done < e.FlashSize; done += chunk {
-		res, err := a.am28Run(e, am28ModeErase, e.FlashAddr+done, e.FlashAddr+done+chunk, nil, 60*time.Second)
+		res, err := f.am28Run(e, am28ModeErase, e.FlashAddr+done, e.FlashAddr+done+chunk, 0, nil, 60*time.Second)
 		if err != nil {
-			a.resetAM28(e)
+			f.resetAM28(e)
 			return err
 		}
 		if done == 0 {
@@ -1083,7 +1162,7 @@ func (a *ArduBDM) eraseAM28(e *ECU, prog progressFn) error {
 		}
 		prog(e.FlashSize/2 + (done+chunk)/2)
 	}
-	return a.resetAM28(e)
+	return f.resetAM28(e)
 }
 
 // ---- CMFI (MC68F375 on-chip flash, Trionic 8 MCP) ----
@@ -1132,7 +1211,7 @@ func (a *ArduBDM) readCMFI(e *ECU, w io.Writer, prog progressFn) error {
 // cmfiSetup uploads the driver and initialises it: it installs its own command
 // jumps and stack, and must run once before any other command.
 func (a *ArduBDM) cmfiSetup(e *ECU) error {
-	if err := a.uploadDriver(e, cmfiDriver); err != nil {
+	if err := a.drv().uploadDriver(e, cmfiDriver); err != nil {
 		return err
 	}
 	if err := a.writeSysReg(sysregSR, 0x2700); err != nil { // interrupts off while our code runs

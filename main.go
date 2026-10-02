@@ -73,7 +73,7 @@ type adapterDef struct {
 }
 
 var adapters = []adapterDef{
-	{"CombiAdapter", opener(Open)},
+	{"CombiAdapter", openCombi},
 	{"USB BDM", opener(OpenBDM)},
 	{"USB BDM MkII", opener(OpenBDM2)},
 }
@@ -183,6 +183,7 @@ func (u *UI) menu() *fyne.MainMenu {
 		),
 		fyne.NewMenu("Firmware",
 			item("Upload ArduBDM", u.uploadArdubdm),
+			u.combiMenu(),
 		),
 		fyne.NewMenu("Help", item("About BDM Tool...", u.about)),
 	)
@@ -442,7 +443,14 @@ func (u *UI) ecu() *ECU {
 // run executes fn on a worker goroutine, feeding the progress bar and
 // re-enabling the buttons when it finishes.
 func (u *UI) run(name string, total uint32, fn func(progressFn) error) {
-	if u.c == nil || !u.busy.CompareAndSwap(false, true) {
+	if u.c != nil {
+		u.work(name, total, fn)
+	}
+}
+
+// work is run without the need for a connected adapter.
+func (u *UI) work(name string, total uint32, fn func(progressFn) error) {
+	if !u.busy.CompareAndSwap(false, true) {
 		return
 	}
 	//u.setOps(false)

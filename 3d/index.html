@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trionic BDM Hookup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+:root{
+  --bg:#edf0ec;--panel:#fbfcfa;--stage:#dce2db;--ink:#18211b;--muted:#566359;--line:#c8d1c9;
+  --accent:#9a5400;--stripe:#c62828;--pin:#2e7048;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0e1311;--panel:#151c18;--stage:#111815;--ink:#e2e9e4;--muted:#8f9d94;--line:#2a352e;--accent:#f0a03a;--stripe:#ff6259;--pin:#6fcf97}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0e1311;--panel:#151c18;--stage:#111815;--ink:#e2e9e4;--muted:#8f9d94;--line:#2a352e;--accent:#f0a03a;--stripe:#ff6259;--pin:#6fcf97}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--body);padding-inline:16px;padding-block:24px 40px}
+.wrap{max-width:1200px;margin:0 auto;display:grid;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px}
+h1{font:700 clamp(30px,4.2vw,44px)/1 var(--display);margin:0;letter-spacing:.005em;text-wrap:balance}
+header p{margin:6px 0 0;color:var(--muted);max-width:64ch}
+.tabs{display:inline-flex;border:1px solid var(--line);border-radius:6px;padding:3px;background:var(--panel);gap:3px}
+.tabs button{font:600 15px var(--body);color:var(--muted);background:none;border:0;border-radius:4px;padding:7px 16px;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}
+@media (max-width:880px){main{grid-template-columns:minmax(0,1fr)}}
+figure{margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--stage)}
+.stage{position:relative;aspect-ratio:4/3;max-width:100%;overflow:hidden}
+.stage canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.overlay{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.tag,.pn{position:absolute;left:0;top:0;white-space:nowrap;will-change:transform}
+.tag{translate:-50% calc(-100% - 10px);font:600 12px/1.25 var(--mono);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:3px 7px;box-shadow:0 1px 3px rgb(0 0 0/.18)}
+.tag::after{content:"";position:absolute;left:50%;top:100%;width:1px;height:10px;background:var(--muted)}
+.tag.red{color:var(--stripe);border-color:var(--stripe)}
+.tag.red::after{background:var(--stripe)}
+.tag.dim{color:var(--muted);font-weight:400}
+.pn{translate:-50% -50%;font:600 11px/1 var(--mono);color:var(--accent);text-shadow:0 0 3px var(--stage),0 0 3px var(--stage)}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding:10px 14px;border-top:1px solid var(--line);background:var(--panel)}
+.lift{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lift label{font:600 13px var(--body)}
+.lift input{accent-color:var(--accent);width:min(220px,60vw)}
+.lift output{font:13px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);min-width:7ch}
+.views{display:flex;gap:6px;margin-left:auto}
+.views button{font:600 13px var(--body);color:var(--ink);background:none;border:1px solid var(--line);border-radius:4px;padding:5px 10px;cursor:pointer}
+.views button:hover{border-color:var(--ink)}
+.hint{flex-basis:100%;margin:0;font-size:12px;color:var(--muted)}
+aside{display:grid;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px}
+aside h2{font:700 28px/1 var(--display);margin:0}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:14px}
+dt{font:600 11px/1.9 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+dd{margin:0}
+.map{display:flex;flex-direction:column;gap:6px}
+.map.below{flex-direction:column-reverse}
+.ribbon{position:relative;height:22px;border-radius:2px;display:flex;align-items:center;justify-content:center;font:600 11px var(--mono);color:#1e2327;background:repeating-linear-gradient(90deg,#b8bdc2 0 calc(10% - 1px),#8d949a calc(10% - 1px) 10%)}
+.ribbon::before{content:"";position:absolute;top:0;bottom:0;width:10%;background:var(--stripe)}
+.map.left .ribbon::before{left:0}
+.map.right .ribbon::before{right:0}
+.holes{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.cell{border:1px solid var(--pin);background:color-mix(in srgb,var(--pin) 13%,var(--panel));border-radius:4px;padding:7px 2px;text-align:center;display:grid;gap:3px}
+.cell b{font:600 16px/1 var(--mono)}
+.cell small{font:10px/1 var(--mono);color:var(--muted)}
+.cell.empty{border:1px dashed var(--muted);background:none}
+.cell.one b{color:var(--stripe)}
+.cap{font-size:12px;color:var(--muted);margin:0}
+.note{font-size:13px;color:var(--muted);margin:0;border-top:1px solid var(--line);padding-top:12px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Trionic BDM Hookup</h1>
+      <p>Where the ardubdm 10-way IDC plug goes on the ECU. Hold the ECU with the edge connector and heatsink away from you: the CPU sits in the middle and the BDM header just below it, at the near edge. T5 and T7 sit the same way.</p>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-t7" data-k="t7">Trionic 7</button>
+      <button role="tab" id="tab-t5" data-k="t5">Trionic 5</button>
+    </div>
+  </header>
+
+  <main>
+    <figure>
+      <div class="stage" id="stage"><div class="overlay" id="overlay"></div></div>
+      <div class="controls">
+        <div class="lift">
+          <label for="lift">Lift plug</label>
+          <input type="range" id="lift" min="0" max="1" step="0.01" value="0.45">
+          <output id="liftv" for="lift"></output>
+        </div>
+        <div class="views">
+          <button id="v-bench">Bench view</button>
+          <button id="v-top">Top view</button>
+        </div>
+        <p class="hint">Drag to orbit, scroll or pinch to zoom, right-drag to pan. Amber lines drop from each plug hole to its pin; red lines mark holes with no pin under them.</p>
+      </div>
+    </figure>
+
+    <aside>
+      <h2 id="pname"></h2>
+      <dl id="facts"></dl>
+      <div class="map" id="map"><div class="ribbon"></div><div class="holes"></div></div>
+      <p class="cap">Plug holes seen from above, ECU held as described, near edge at the bottom. Hole 1 is under the red stripe.</p>
+      <p class="note" id="note"></p>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// Units are mm. x = right, y = up off the board, z = toward you.
+const P = 2.54, ZH = 32, BASE_H = 2.5, PIN_TOP = 8.5, MAX_LIFT = 30;
+const PLUG = {w: 20.3, d: 9, base: 6.5};
+const RIB_Y = PLUG.base + 0.62, CAP_Y0 = RIB_Y + 0.62, CAP_TOP = CAP_Y0 + 2.4;
+const SIG = {1:'DS',2:'BERR',3:'GND',4:'DSCLK',5:'GND',6:'FREEZE',7:'RESET',8:'DSI',9:'VDD',10:'DSO'};
+// Plug-local hole position [x, z]: pin 1 at -x, odd row on +z, the side the ribbon leaves from.
+const hole = n => [-2*P + P*Math.floor((n-1)/2), n % 2 ? P/2 : -P/2];
+
+// One plug model; each ECU only says how it is turned and shifted. The header pins are
+// placed under the holes, so the pin/hole mapping can't disagree with the plug.
+const MODELS = {
+  t7: {name:'Trionic 7', pins:[1,2,3,4,5,6,7,8,9,10], rot:0, dx:0,
+       ribbon:'below', stripe:'left', rows:[[2,4,6,8,10],[1,3,5,7,9]], toward:'toward you',
+       facts:[['Header','2 × 5, all ten pins fitted'],['Plug','Goes on pin for pin'],['Red stripe','Left end, over pin 1'],['Ribbon','Leaves toward you, off the near edge']],
+       note:'BERR on pin 2 is wired to the MCU on the T7. The adapter leaves it as an input until a5 asserts it.'},
+  t5: {name:'Trionic 5', pins:[3,4,5,6,7,8,9,10], rot:Math.PI, dx:P/2,
+       ribbon:'above', stripe:'right', rows:[[9,7,5,3,1],[10,8,6,4,2]], toward:'over the CPU',
+       facts:[['Header','2 × 4, pins 3 to 10 only'],['Plug','Same plug, turned half a turn from the T7'],['Red stripe','Right end. Holes 1 and 2 hang past the header, empty'],['Ribbon','Leaves away from you, over the CPU']],
+       note:'Feed the T5 14 to 15 V on the bench when flashing. It makes its 12 V programming voltage from the supply, and at 12 V in, erase fails.'},
+};
+function toWorld(m, [x, z]) {
+  const c = Math.cos(m.rot), s = Math.sin(m.rot);
+  return [x*c + z*s + m.dx, -x*s + z*c + ZH];
+}
+
+const V2 = THREE.Vector2, V3 = THREE.Vector3;
+const stage = document.getElementById('stage'), overlay = document.getElementById('overlay');
+const renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 4/3, 1, 1000);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.minDistance = 30;
+controls.maxDistance = 320;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x2c3a31, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(40, 120, 90);
+scene.add(sun);
+
+const mat = (color, o = {}) => new THREE.MeshStandardMaterial({color, roughness: .6, ...o});
+function box(w, h, d, m, x, y, z) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+  b.position.set(x, y, z);
+  return b;
+}
+function chipTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#9c9fa4'; g.textAlign = 'center';
+  g.font = '600 22px sans-serif'; g.fillText('MOTOROLA', 128, 104);
+  g.font = '700 40px sans-serif'; g.fillText('MC68332', 128, 150);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  return t;
+}
+
+// Parts common to both ECUs (representative, not to scale outside the header area).
+scene.add(box(140, 1.6, 92, mat(0x1d5a3a, {roughness: .55}), 0, -0.8, -6));          // PCB, far edge z=-52, near edge z=40
+scene.add(box(112, 11, 12, mat(0x1e1f22), 0, 5.5, -44));                               // edge connector
+scene.add(box(136, 20, 3, mat(0xb9c0c6, {metalness: .7, roughness: .35}), 0, 10, -50.5)); // heatsink
+scene.add(box(27.6, .3, 27.6, mat(0xc9ccd0, {metalness: .8, roughness: .3}), 0, .35, 10)); // QFP leads
+scene.add(box(24, 3.2, 24, mat(0x232326, {roughness: .8}), 0, 1.9, 10));               // CPU body
+const chipLbl = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({map: chipTex(), transparent: true}));
+chipLbl.rotation.x = -Math.PI/2; chipLbl.position.set(0, 3.52, 10);
+scene.add(chipLbl);
+
+let model, ecu, plug, guides = [], tags = [], pinLabels = [];
+function tag(text, cls, pos) {
+  const el = document.createElement('div');
+  el.className = cls; el.textContent = text;
+  overlay.append(el); tags.push({el, pos});
+  return el;
+}
+
+function build(key) {
+  const m = model = MODELS[key];
+  if (ecu) scene.remove(ecu); // ponytail: old geometry is left to GC, two models only
+  ecu = new THREE.Group(); scene.add(ecu);
+  overlay.textContent = ''; tags = []; pinLabels = []; guides = [];
+
+  // Header
+  const pins = m.pins.map(n => [n, toWorld(m, hole(n))]);
+  const xs = pins.map(p => p[1][0]);
+  const x0 = Math.min(...xs) - P/2, x1 = Math.max(...xs) + P/2;
+  ecu.add(box(x1 - x0, BASE_H, 2*P, mat(0x151515), (x0 + x1)/2, BASE_H/2, ZH));
+  const gold = mat(0xd8ad45, {metalness: .85, roughness: .3});
+  for (const [n, [x, z]] of pins) {
+    ecu.add(box(.64, PIN_TOP, .64, gold, x, PIN_TOP/2, z));
+    pinLabels.push(tag(String(n), 'pn', new V3(x, .1, z + Math.sign(z - ZH)*3.9)));
+  }
+
+  // Plug: body, ribbon clamped under the cap, pin 1 triangle
+  plug = new THREE.Group(); plug.rotation.y = m.rot; ecu.add(plug);
+  const black = mat(0x2a2b2e, {roughness: .7});
+  plug.add(box(PLUG.w, PLUG.base, PLUG.d, black, 0, PLUG.base/2, 0));
+  plug.add(box(PLUG.w, CAP_TOP - CAP_Y0, PLUG.d, black, 0, (CAP_Y0 + CAP_TOP)/2, 0));
+  const tri = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape([new V2(-1.3, 0), new V2(1, 1.2), new V2(1, -1.2)])),
+                             new THREE.MeshBasicMaterial({color: 0xe8e8e8, side: THREE.DoubleSide}));
+  tri.rotation.x = -Math.PI/2; tri.position.set(-8.4, CAP_TOP + .02, 0);
+  plug.add(tri);
+  const red = mat(0xc62828, {roughness: .5}), grey = mat(0xa4aab0, {roughness: .5});
+  const path = [[-PLUG.d/2, 0], [PLUG.d/2, 0], [12, .3], [22, 3], [30, 10], [38, 22]];
+  for (let k = 1; k <= 10; k++) {
+    const x = -5.715 + (k - 1)*1.27; // conductor 1 over the pin 1 end
+    const curve = new THREE.CatmullRomCurve3(path.map(([z, y]) => new V3(x, RIB_Y + y, z)));
+    plug.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 60, .62, 8), k === 1 ? red : grey));
+  }
+
+  // Guide lines from every hole down to its pin, or to bare board
+  for (let n = 1; n <= 10; n++) {
+    const [x, z] = toWorld(m, hole(n)), has = m.pins.includes(n);
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(), new V3()]),
+                                new THREE.LineBasicMaterial({color: has ? 0xf0a03a : 0xff5a4f}));
+    line.userData = {x, z, to: has ? PIN_TOP : .05};
+    ecu.add(line); guides.push(line);
+  }
+
+  tag('Far edge: connector, heatsink', 'tag dim', new V3(0, 21, -50.5));
+  tag('Near edge, toward you', 'tag dim', new V3(0, 0, 40));
+  tag('Red stripe = hole 1', 'tag red', () => plug.localToWorld(new V3(-5.715, RIB_Y + 3.6, 22)));
+  tag('To adapter, ' + m.toward, 'tag', () => plug.localToWorld(new V3(0, RIB_Y + 22.8, 38)));
+  if (key === 't5') tag('Holes 1 and 2: no pins', 'tag red', () => plug.localToWorld(new V3(-8.4, CAP_TOP, 0)));
+
+  panel(m);
+  document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.k === key));
+  setLift(+liftIn.value);
+}
+
+function panel(m) {
+  document.getElementById('pname').textContent = m.name;
+  document.getElementById('facts').innerHTML = m.facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  const map = document.getElementById('map');
+  map.className = `map ${m.ribbon} ${m.stripe}`;
+  map.querySelector('.ribbon').textContent = (m.ribbon === 'below' ? '↓' : '↑') + ' ribbon to adapter';
+  map.querySelector('.holes').innerHTML = m.rows.flat().map(n => {
+    const on = m.pins.includes(n);
+    return `<div class="cell${on ? '' : ' empty'}${n === 1 ? ' one' : ''}"><b>${n}</b><small>${on ? SIG[n] : 'no pin'}</small></div>`;
+  }).join('');
+  document.getElementById('note').textContent = m.note;
+}
+
+const liftIn = document.getElementById('lift'), liftOut = document.getElementById('liftv');
+function setLift(v) {
+  const y = BASE_H + v*MAX_LIFT;
+  plug.position.set(model.dx, y, ZH);
+  for (const g of guides) {
+    const {x, z, to} = g.userData, pos = g.geometry.attributes.position;
+    pos.setXYZ(0, x, y, z); pos.setXYZ(1, x, to, z); pos.needsUpdate = true;
+    g.visible = y > to + .2;
+  }
+  const o = Math.min(1, Math.max(0, (v - .08)/.2));
+  for (const el of pinLabels) el.style.opacity = o;
+  liftOut.textContent = v === 0 ? 'seated' : `+${Math.round(v*MAX_LIFT)} mm`;
+}
+liftIn.addEventListener('input', () => setLift(+liftIn.value));
+
+const VIEWS = {bench: [[-60, 72, 112], [0, 4, 22]], top: [[0, 165, 23], [0, 0, 22]]};
+function view(k) {
+  const [p, t] = VIEWS[k];
+  camera.position.set(...p); controls.target.set(...t); controls.update();
+}
+document.getElementById('v-bench').onclick = () => view('bench');
+document.getElementById('v-top').onclick = () => view('top');
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => build(b.dataset.k));
+
+function placeTags() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  for (const t of tags) {
+    const v = (typeof t.pos === 'function' ? t.pos() : t.pos.clone()).project(camera);
+    t.el.hidden = v.z > 1;
+    t.el.style.transform = `translate(${(v.x + 1)/2*w}px,${(1 - v.y)/2*h}px)`;
+  }
+}
+new ResizeObserver(() => {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w/h; camera.updateProjectionMatrix();
+}).observe(stage);
+
+build(location.hash === '#t5' ? 't5' : 't7');
+view('bench');
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+  placeTags();
+})();
+</script>
