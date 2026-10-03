@@ -16,7 +16,7 @@ firmwares: firmwares/ardubdm.hex firmwares/combiadapter.bin
 run: firmwares
 	go run -tags=wayland .
 
-bdmtool: firmwares
+bdmtool:
 	go build -ldflags '-s -w' -o bdmtool .
 
 clean:
@@ -28,7 +28,7 @@ $(APPIMAGETOOL):
 	chmod +x $@
 
 # ponytail: no bundled .so files; libusb-1.0 and gtk3 ship with every desktop distro
-appimage: firmwares bdmtool $(APPIMAGETOOL)
+appimage: bdmtool $(APPIMAGETOOL)
 	rm -rf .tmp/AppDir
 	mkdir -p .tmp/AppDir/usr/bin .tmp/AppDir/usr/share/icons
 	cp bdmtool .tmp/AppDir/usr/bin/
