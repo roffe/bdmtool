@@ -1,4 +1,4 @@
-// Package main: CombiAdapter BDM transport.
+// Package bdm: CombiAdapter BDM transport.
 //
 // Wire protocol (same framing as the CAN side): cmd, size (u16 BE), payload,
 // terminator (0x00 ack / 0xFF nak), in both directions. Command payloads are
@@ -13,7 +13,7 @@
 // Firmware 2.0 adds block write (0x4f) and run until BGND (0x50), so flash
 // erase and write run ardubdm's CPU32 drivers in target RAM, as ardubdm.go
 // does. Older firmware gets the original 0x4c/0x4d flow.
-package main
+package bdm
 
 import (
 	"bufio"

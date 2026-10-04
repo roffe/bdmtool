@@ -1,4 +1,4 @@
-package main
+package bdm
 
 import (
 	"strings"
@@ -27,7 +27,7 @@ func (u *UI) uploadCombi(name string, fw []byte) {
 			if !ok || u.busy.Load() {
 				return
 			}
-			u.disconnect() // the bootloader needs the USB interface we hold
+			u.Disconnect() // the bootloader needs the USB interface we hold
 			u.work("Upload CombiAdapter firmware", uint32(len(fw)), func(p progressFn) error {
 				return flashCombi(fw, u.logf, p)
 			})

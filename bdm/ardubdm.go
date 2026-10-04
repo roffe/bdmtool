@@ -1,4 +1,4 @@
-// Package main: ardubdm (ATmega328PB bit-banged CPU32 BDM) transport over a
+// Package bdm: ardubdm (ATmega328PB bit-banged CPU32 BDM) transport over a
 // serial port, 1 Mbaud 8N1.
 //
 // Same ASCII line protocol as the USB BDM (usbbdm.go) with two differences:
@@ -8,7 +8,7 @@
 // Commands are pipelined, one window of them in flight ahead of the replies,
 // because a USB-serial round trip costs milliseconds; the window keeps the
 // firmware's 1 KB receive buffer from overflowing when BDM lags the link.
-package main
+package bdm
 
 import (
 	"bytes"

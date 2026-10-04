@@ -1,4 +1,4 @@
-// Package main: USB BDM (the original FTDI-based adapter) transport.
+// Package bdm: USB BDM (the original FTDI-based adapter) transport.
 //
 // Transcribed from caFTDIAdapter in the stock bdmtool's combilib-net.dll. The
 // adapter is a plain FTDI UART at 921600 8N1 with RTS/CTS, speaking a line
@@ -9,7 +9,7 @@
 // The chip is driven over libusb directly rather than through the kernel's
 // ftdi_sio tty, because the streaming flash dump needs RTS/CTS and the tty
 // API Go can reach does not offer it.
-package main
+package bdm
 
 import (
 	"encoding/hex"

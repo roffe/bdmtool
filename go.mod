@@ -6,7 +6,7 @@ require (
 	fyne.io/fyne/v2 v2.8.2-0.20260910171750-900a0401dbe4
 	github.com/gotmc/libusb/v2 v2.6.0
 	github.com/roffe/avrflash v0.0.0-20260923171743-6502105c9b8d
-	github.com/sqweek/dialog v0.0.0-20260123140253-64c163d53aac
+	github.com/roffe/browse v0.0.0-20261004104941-eb6d091b1974
 	go.bug.st/serial v1.8.0
 )
 
@@ -14,7 +14,6 @@ require (
 	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
-	github.com/TheTitanrain/w32 v0.0.0-20180517000239-4f5cfb03fabf // indirect
 	github.com/anthonynsimon/bild v0.14.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -43,7 +42,7 @@ require (
 	github.com/yuin/goldmark v1.8.2 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -64,6 +64,23 @@ To regenerate the screenshot above (renders offscreen, no display needed):
 ./bdmtool -screenshot screenshot.png
 ```
 
+## Embedding
+
+The tool is package `github.com/roffe/bdmtool/bdm`, a Fyne widget; `main.go`
+is just the standalone window around it. To host it in another Fyne app:
+
+```go
+ui := bdm.New(&bdm.Config{
+	Window:   win,                                       // dialogs open over it
+	OpenFile: func(ext string, fn func(path string)) {}, // host's native pickers
+	SaveFile: func(name, ext string, fn func(path string)) {},
+	OnExit:   func() { /* close the panel */ },
+})
+// place ui anywhere a fyne.CanvasObject goes; call ui.Disconnect() when it closes.
+```
+
+The firmware upload entries are only in `ui.Menu()`. One instance per process.
+
 ## Credits
 
 - Go/Fyne port by Joakim "Roffe" Karlsson.

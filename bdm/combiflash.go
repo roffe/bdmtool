@@ -1,4 +1,4 @@
-// Package main: CombiAdapter (LPC1768) firmware update over its USB bootloader.
+// Package bdm: CombiAdapter (LPC1768) firmware update over its USB bootloader.
 //
 // The bootloader runs for about 4 s after every reset or power-up. If the
 // adapter is already running its app, fw 2.0 and later reboot into the
@@ -9,7 +9,7 @@
 // app (ffff:0005, OUT 0x05 / IN 0x82): send "UPDT\r", get "RDY\r" (4-byte
 // blocks) or "RDY2\r" (200-byte blocks), stream the .bin as uppercase hex
 // blocks each terminated by \r and acked with \r, then "EXIT\r".
-package main
+package bdm
 
 import (
 	"bytes"
