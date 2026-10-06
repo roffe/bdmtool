@@ -819,7 +819,7 @@ func identify(p prober) (*ECU, string, error) {
 		return ecuByName("Trionic 8"), fmt.Sprintf("MC68377 (MCR %04X)", mcr), nil
 	}
 	prep := []memWrite{
-		w8(0xfffa21, 0x00), w16(0xfffa44, 0x3fff),
+		w16(0xfffa00, simcrPrep), w8(0xfffa21, sypcrPrep), w16(0xfffa44, 0x3fff),
 		w16(0xfffa48, 0x0007), w16(0xfffa4a, 0x6870),
 		w16(0xfffa50, 0x0007), w16(0xfffa52, 0x3030),
 		w16(0xfffa54, 0x0007), w16(0xfffa56, 0x5030),
@@ -932,12 +932,14 @@ func info(p prober) (string, error) {
 	swe, swp, swt := sypcr>>7&1, sypcr>>6&1, sypcr>>4&3
 	wd := "off"
 	if swe == 1 {
-		clocks := float64(uint(1)<<(9+2*swt)) * float64(1+511*swp)
-		wd = fmt.Sprintf("on, timeout %.1f ms", clocks/fsys*1e3)
+		// The watchdog counts EXTAL (the 32.768 kHz crystal), not the CPU clock (MC68332UM Table 4-4)
+		ratio := float64(uint(1)<<(9+2*swt)) * float64(1+511*swp)
+		wd = fmt.Sprintf("on, timeout %v", time.Duration(ratio/32768*float64(time.Second)).Round(time.Millisecond))
 	}
 	bm := "off"
 	if sypcr>>2&1 == 1 {
-		bm = fmt.Sprintf("on, %d us", []int{64, 32, 16, 8}[sypcr&3])
+		n := []int{64, 32, 16, 8}[sypcr&3] // system clocks
+		bm = fmt.Sprintf("on, %d clocks (%.1f us)", n, float64(n)/fsys*1e6)
 	}
 	fmt.Fprintf(&b, "  SYPCR %02X: watchdog %s; bus monitor %s; halt monitor %s\n", sypcr, wd, bm, []string{"off", "on"}[sypcr>>3&1])
 	fmt.Fprintf(&b, "  chip selects (CSPAR0 %04X CSPAR1 %04X):\n", cspar0, cspar1)
@@ -963,9 +965,9 @@ func info(p prober) (string, error) {
 		dsack := or >> 6 & 0xf
 		ws := fmt.Sprintf("%d wait states", dsack)
 		if dsack == 14 {
-			ws = "external DSACK"
-		} else if dsack == 15 {
 			ws = "fast termination"
+		} else if dsack == 15 {
+			ws = "external DSACK"
 		}
 		fmt.Fprintf(&b, "    %-6s %06X size %-4s %-10s %-11s %s\n", name, uint32(bar&0xfff8)<<8, sizes[bar&7], rw, bytes, ws)
 	}

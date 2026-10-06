@@ -202,7 +202,7 @@ func TestCombiIdentify(t *testing.T) {
 	reply(cmdBDMRestart, nil)
 	acks(cmdBDMWriteSysReg, 2)               // SFC, DFC
 	reply(cmdBDMReadMem, []byte{0xCF, 0x00}) // 68332 SIMCR
-	acks(cmdBDMWriteMem, 10+3)               // probe prep, autoselect
+	acks(cmdBDMWriteMem, 11+3)               // probe prep, autoselect
 	reply(cmdBDMReadMem, []byte{0x89, 0x89}) // Intel
 	reply(cmdBDMReadMem, []byte{0xB4, 0xB4}) // 28F010
 	acks(cmdBDMWriteMem, 4)                  // resets, Vpp off

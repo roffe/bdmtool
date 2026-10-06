@@ -9,6 +9,14 @@ import (
 	"github.com/roffe/bdmtool/firmwares"
 )
 
+func (u *UI) ardubdmMenu() *fyne.MenuItem {
+	m := fyne.NewMenuItem("ArduBDM", nil)
+	m.ChildMenu = fyne.NewMenu("",
+		fyne.NewMenuItem("1.3 (latest)", u.uploadArdubdm),
+	)
+	return m
+}
+
 func (u *UI) combiMenu() *fyne.MenuItem {
 	m := fyne.NewMenuItem("CombiAdapter", nil)
 	m.ChildMenu = fyne.NewMenu("",

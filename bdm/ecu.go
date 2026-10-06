@@ -52,9 +52,20 @@ func w16(addr, val uint32) memWrite { return memWrite{addr, val, 2} }
 func delay(ms uint32) memWrite     { return memWrite{0, ms, 0} }
 func w8(addr, val uint32) memWrite { return memWrite{addr, val, 1} }
 
+// SYPCR for the prep tables: watchdog off, bus monitor on at 64 clocks, as the
+// T5 (0xAC) and T7 (0xEC) firmware run. An access with no chip select then ends
+// in a bus error instead of hanging the CPU until reset. SYPCR is write-once.
+// SIMCR resets to 0x60CF, whose FRZBM bit turns the bus monitor off while in
+// BDM, so each table also writes SIMCR with FRZBM clear (simcrPrep, or the T7's
+// own value with it cleared).
+const (
+	sypcrPrep = 0x04
+	simcrPrep = 0x40cf // reset value minus FRZBM
+)
+
 // Trionic 5.2, 5.5 (28F010 chips) and Volvo CEM share this setup.
 var prepT5 = []memWrite{
-	w16(0xfffa04, 0x7f00), w16(0xfffa21, 0x0000), w16(0xfffa44, 0x3fff),
+	w16(0xfffa00, simcrPrep), w16(0xfffa04, 0x7f00), w16(0xfffa21, sypcrPrep), w16(0xfffa44, 0x3fff),
 	w16(0xfffa48, 0x0405), w16(0xfffa4a, 0x6b70), w16(0xfffa50, 0x0405),
 	w16(0xfffa52, 0x3370), w16(0xfffa54, 0x0405), w16(0xfffa56, 0x5370),
 	w16(0xfffc14, 0x0040), w16(0xfffc17, 0x0040),
@@ -67,9 +78,11 @@ var prepT55New = []memWrite{
 	w16(0xfffa56, 0x5370),
 }
 
+// SIMCR 0x41c2: the T7's 0x61c2 with FRZBM cleared, so the bus monitor keeps
+// running while FREEZE is high (in BDM, where every prep access happens).
 var prepT7 = concat(
 	[]memWrite{
-		w16(0xfffa00, 0x61c2), w16(0xfffa04, 0x7f08), w16(0xfffa11, 0x0000),
+		w16(0xfffa00, 0x41c2), w16(0xfffa04, 0x7f08), w16(0xfffa11, 0x0000),
 		w16(0xfffa13, 0x0000), w16(0xfffa15, 0x00fe), w16(0xfffa17, 0x0011),
 		w16(0xfffa19, 0x007b), w16(0xfffa1b, 0x007b), w16(0xfffa1d, 0x0085),
 		w16(0xfffa1f, 0x0008), w16(0xfffa22, 0x0250), w16(0xfffa24, 0x0129),
@@ -87,7 +100,7 @@ var prepT7 = concat(
 		0x3030, 0xff00, 0x7bf0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 		0x0000, 0xfff8, 0x2bc7),
 	[]memWrite{
-		w16(0xfffa04, 0x7f00), w8(0xfffa21, 0x00), w16(0xfffa4a, 0x6b70),
+		w16(0xfffa04, 0x7f00), w8(0xfffa21, sypcrPrep), w16(0xfffa4a, 0x6b70),
 		w16(0xfffa50, 0x0007), w16(0xfffa52, 0x3370),
 	},
 )

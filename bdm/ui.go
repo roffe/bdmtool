@@ -154,7 +154,7 @@ func (u *UI) Menu() *fyne.MainMenu {
 			item("Stop", u.stopMCU),
 		),
 		fyne.NewMenu("Firmware",
-			item("Upload ArduBDM", u.uploadArdubdm),
+			u.ardubdmMenu(),
 			u.combiMenu(),
 		),
 		fyne.NewMenu("Help", item("About BDM Tool...", u.about)),
