@@ -20,7 +20,7 @@ jobs:
         go-version: '1.27.1'
         cache: false
     - name: Get dependencies
-      run: sudo apt-get update && sudo apt-get install 7zip gcc libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libx11-dev xorg-dev libusb-1.0-0-dev
+      run: sudo apt-get update && sudo apt-get install 7zip gcc libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libx11-dev xorg-dev libwayland-dev libxkbcommon-dev libusb-1.0-0-dev
     - name: Get Go dependencies
       run: go get .
     - name: Build bdmtool

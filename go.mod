@@ -3,7 +3,7 @@ module github.com/roffe/bdmtool
 go 1.27.1
 
 require (
-	fyne.io/fyne/v2 v2.8.2-0.20260910171750-900a0401dbe4
+	fyne.io/fyne/v2 v2.8.2-0.20261006204101-016883384852
 	github.com/gotmc/libusb/v2 v2.6.0
 	github.com/roffe/avrflash v0.0.0-20260923171743-6502105c9b8d
 	github.com/roffe/browse v0.0.0-20261004104941-eb6d091b1974
@@ -21,11 +21,11 @@ require (
 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
 	github.com/fyne-io/glfw-js v0.4.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
-	github.com/fyne-io/oksvg v0.2.0 // indirect
+	github.com/fyne-io/oksvg v0.2.1-0.20260918172519-a9af55fa95d9 // indirect
 	github.com/go-gl/gl v0.0.0-20260331235117-4566fea9a276 // indirect
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.2 // indirect
 	github.com/go-text/render v0.2.1 // indirect
-	github.com/go-text/typesetting v0.3.4 // indirect
+	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.0 // indirect

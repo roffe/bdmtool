@@ -3,7 +3,7 @@
 ![BDMTool main window](screenshot.png)
 
 Reads and writes SAAB Trionic (and Volvo CEM) ECU flash and SRAM over BDM
-(Background Debug Mode). A extended Go/Fyne version of Janis Silins' BDM Tool.
+(Background Debug Mode). A extended Go/Fyne version of Jānis Silins' BDM Tool.
 
 ## Supported adapters
 
@@ -51,7 +51,7 @@ this ECU. Not yet bench-verified.
 
 ## Build and run
 
-Requires Go and libusb-1.0 development headers (CombiAdapter and USB BDM use libusb).
+Requires Go and libusb-1.0 development headers (CombiAdapter and USB BDM use libusb). On Linux the Fyne/GLFW build also needs the X11 and Wayland development headers (`xorg-dev libwayland-dev libxkbcommon-dev` on Debian/Ubuntu); build with `-tags=x11` or `-tags=wayland` to compile only one backend.
 
 ```sh
 go build -o bdmtool .
@@ -84,7 +84,7 @@ The firmware upload entries are only in `ui.Menu()`. One instance per process.
 ## Credits
 
 - Go/Fyne port by Joakim "Roffe" Karlsson.
-- Original BDM Tool v2.13 by Janis Silins, 2009-2016.
+- Original BDM Tool v2.13 by Jānis Silins, 2009-2016.
 - Portions of code from BDM v0.90, Scott Howard, 1992.
 - Flash routines transcribed from Just4Trionic (Sophie Dexter).
 - Trionic 8 MCP setup and its CMFI flash driver from bdmtoy.
