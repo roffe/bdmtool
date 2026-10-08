@@ -147,9 +147,10 @@ The Firmware menu flashes the firmware images built into BDM Tool.
 
 - **Upload ArduBDM** writes the ardubdm firmware to the board on the selected
   serial port.
-- **CombiAdapter → 1.1 (legacy)** / **Latest** (2.0) writes CombiAdapter
+- **CombiAdapter → 1.1 (legacy)** / **2.1 (latest)** writes CombiAdapter
   firmware over the adapter's USB bootloader. It takes 10 to 15 seconds and
-  the adapter restarts when it is done. Firmware 2.0 and later reboot into
+  the adapter restarts when it is done. On Windows, 2.1 needs no Zadig:
+  Windows installs WinUSB for it on its own. Firmware 2.0 and later reboot into
   the bootloader on request. With older firmware the bootloader is only there
   for about 4 seconds after power-up: unplug the adapter, plug it back in and
   start the upload within that time. The bootloader itself is never
