@@ -26,6 +26,29 @@ func (u *UI) combiMenu() *fyne.MenuItem {
 	return m
 }
 
+func (u *UI) bdmtoyMenu() *fyne.MenuItem {
+	m := fyne.NewMenuItem("bdmtoy", nil)
+	m.ChildMenu = fyne.NewMenu("",
+		fyne.NewMenuItem("2.2 (latest)", func() { u.uploadToy("2.2 (latest)", firmwares.BdmtoyBin) }),
+	)
+	return m
+}
+
+// uploadToy flashes fw to a bdmtoy over its USB DFU bootloader (toyflash.go).
+func (u *UI) uploadToy(name string, fw []byte) {
+	dialog.ShowConfirm("bdmtoy firmware",
+		"Flash the "+name+" firmware to the bdmtoy?\nIt needs firmware 2.0 or later on it already (see the README).",
+		func(ok bool) {
+			if !ok || u.busy.Load() {
+				return
+			}
+			u.Disconnect() // the update needs the USB interface we hold
+			u.work("Upload bdmtoy firmware", uint32(len(fw)), func(p progressFn) error {
+				return flashToy(fw, u.logf, p)
+			})
+		}, u.win)
+}
+
 // uploadCombi flashes fw to the CombiAdapter over its USB bootloader
 // (combiflash.go).
 func (u *UI) uploadCombi(name string, fw []byte) {

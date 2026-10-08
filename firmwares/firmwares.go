@@ -10,3 +10,8 @@ var CombiAdapterBin []byte
 
 //go:embed combiadapter-1.1.bin
 var CombiAdapter111Bin []byte
+
+// The bdmtoy app (2.0+), for its USB DFU bootloader
+//
+//go:embed bdmtoy.bin
+var BdmtoyBin []byte

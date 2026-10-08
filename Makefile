@@ -11,7 +11,10 @@ firmwares/ardubdm.hex: $(HOME)/Documents/PlatformIO/Projects/ardubdm/.pio/build/
 firmwares/combiadapter.bin: $(HOME)/devel/CombiAdapter2/firmware2.0/combi-firmware-2.0.bin
 	cp $< $@
 
-firmwares: firmwares/ardubdm.hex firmwares/combiadapter.bin
+firmwares/bdmtoy.bin: $(HOME)/OneDrive/devel/bdmtoy/firmware/bin/firmware.bin
+	cp $< $@
+
+firmwares: firmwares/ardubdm.hex firmwares/combiadapter.bin firmwares/bdmtoy.bin
 
 run: firmwares
 	go run -tags=wayland .

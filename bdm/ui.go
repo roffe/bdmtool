@@ -158,6 +158,7 @@ func (u *UI) Menu() *fyne.MainMenu {
 		),
 		fyne.NewMenu("Firmware",
 			u.ardubdmMenu(),
+			u.bdmtoyMenu(),
 			u.combiMenu(),
 		),
 		fyne.NewMenu("Help", item("About BDM Tool...", u.about)),

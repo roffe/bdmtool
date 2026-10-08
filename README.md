@@ -155,6 +155,11 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   start the upload within that time. The bootloader itself is never
   overwritten, so a failed upload can always be repeated. Only the original
   LPC1768 CombiAdapter is supported; STM32 clones are refused.
+- **bdmtoy → 2.2 (latest)** writes bdmtoy firmware over its USB bootloader (firmware
+  2.0 or later, see [bdmtoy](#bdmtoy)) in about 7 seconds, then reports the
+  version it restarted with. An update that is cut off leaves the dongle in
+  its bootloader, so it can be repeated. If the dongle does not show up at
+  all, set its BOOT1 jumper to 1 and plug it in to keep it in the bootloader.
 
 ## Identify ECU
 
