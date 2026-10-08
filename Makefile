@@ -19,6 +19,15 @@ firmwares: firmwares/ardubdm.hex firmwares/combiadapter.bin firmwares/bdmtoy.bin
 run: firmwares
 	go run -tags=wayland .
 
+bdmtool.exe:
+	CGO_CFLAGS="-I/home/roffe/go/src/github.com/roffe/txlogger/vcpkg/packages/libusb_x64-windows/include/libusb-1.0" \
+      CGO_LDFLAGS="-L/home/roffe/go/src/github.com/roffe/txlogger/vcpkg/packages/libusb_x64-windows/lib" \
+      CGO_ENABLED=1 \
+      CC=x86_64-w64-mingw32-gcc \
+      GOARCH=amd64 \
+      GOOS=windows \
+      fyne package --os windows --release
+
 bdmtool:
 	go build -ldflags '-s -w' -o bdmtool .
 

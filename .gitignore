@@ -1,4 +1,5 @@
 bdmtool
+BDMTool.exe
 .tmp/
 *.AppImage
 go.work
