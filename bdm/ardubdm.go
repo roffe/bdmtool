@@ -789,6 +789,10 @@ func (a *ArduBDM) readMem(addr uint32, size int) (uint32, error) {
 
 func writeAll(p prober, ws ...memWrite) error {
 	for _, w := range ws {
+		if w.size == 0 {
+			time.Sleep(time.Duration(w.val) * time.Millisecond)
+			continue
+		}
 		if err := p.writeMem(w.addr, w.val, w.size); err != nil {
 			return err
 		}
