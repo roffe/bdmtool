@@ -1,5 +1,5 @@
 // BDM Tool -- reads and writes SAAB Trionic (and Volvo CEM) ECU flash over
-// BDM using a CombiAdapter, USB BDM, USB BDM MkII or ardubdm. A Go/Fyne replacement
+// BDM using a CombiAdapter, USB BDM, USB BDM MkII, ardubdm or bdmtoy. A Go/Fyne replacement
 // for Janis Silins' BDM Tool. The tool itself is package bdm; this is the
 // standalone window around it.
 package main

@@ -16,6 +16,7 @@ Reads and writes SAAB Trionic (and Volvo CEM) ECU flash and SRAM over BDM
 - USB BDM
 - USB BDM MkII
 - ardubdm (ATmega328PB over USB serial; one entry per serial port found at startup)
+- bdmtoy (STM32F103, USB `ffff:0107`) on firmware 2.2 or later, old-style CPU32 BDM. See [bdmtoy](#bdmtoy).
 
 ## Supported ECUs
 
@@ -51,7 +52,7 @@ this ECU. Not yet bench-verified.
 
 ## Build and run
 
-Requires Go and libusb-1.0 development headers (CombiAdapter and USB BDM use libusb). On Linux the Fyne/GLFW build also needs the X11 and Wayland development headers (`xorg-dev libwayland-dev libxkbcommon-dev` on Debian/Ubuntu); build with `-tags=x11` or `-tags=wayland` to compile only one backend.
+Requires Go and libusb-1.0 development headers (CombiAdapter, USB BDM and bdmtoy use libusb). On Linux the Fyne/GLFW build also needs the X11 and Wayland development headers (`xorg-dev libwayland-dev libxkbcommon-dev` on Debian/Ubuntu); build with `-tags=x11` or `-tags=wayland` to compile only one backend.
 
 ```sh
 go build -o bdmtool .
@@ -80,6 +81,52 @@ ui := bdm.New(&bdm.Config{
 ```
 
 The firmware upload entries are only in `ui.Menu()`. One instance per process.
+
+## bdmtoy
+
+BDM Tool needs bdmtoy **firmware 2.2 or later**, and refuses older firmware
+at connect. Compared with the upstream firmware it fixes old-BDM reads of
+slow memory, address 0, BDM reset and halt, and a USB hang; adds a USB
+bootloader; keeps BKPT pulled up while idle, so an ECU powered up with the
+dongle on it does not come up halted; and is a plain vendor USB device that
+Windows installs WinUSB for by itself. It comes from the bdmtoy repository
+(`firmware/`, see its `firmware/README.md`).
+
+Coming from the upstream firmware, flash `bin/bdmtoy-full.hex` (bootloader and
+app) over SWD once: ST-LINK with `make flash`, or STM32CubeProgrammer,
+BOOT0 = 0. After that, Firmware → bdmtoy updates it over USB (see
+[Adapter firmware](#adapter-firmware)).
+
+bdmtoy is driven over libusb, as its own host does. On Linux it needs a udev
+rule for access:
+
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="ffff", ATTR{idProduct}=="0107", GROUP="uucp", MODE="0660", TAG+="uaccess"
+
+and one more for its bootloader, which firmware updates go through:
+
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="ffff", ATTR{idProduct}=="0108", GROUP="uucp", MODE="0660", TAG+="uaccess"
+
+On Windows the dongle and its bootloader both get the WinUSB driver by
+themselves (Microsoft OS 2.0 descriptors), so there is no Zadig step.
+
+Bench-tested on a Trionic 7: Identify and Info, read flash (512 KB in 2.1 s),
+erase and write (11 s), and SRAM read and write. The BDM clock is 1 MHz out
+of reset and for the prep table, then 6 MHz once the prep has set the CPU
+clock to 16 MHz or more (T5, T7, MC68331); otherwise (T8) it stays at 1 MHz.
+Trionic 5 and 8 are untested on it; the MCP is ardubdm only.
+
+- Stop halts a running ECU through BKPT without resetting it, so Info shows
+  the ECU's own setup. Every flash operation still resets into BDM first, so
+  the prep table gets the write-once registers.
+- SRAM is reached after that reset, through the prep's chip selects. Only the
+  Trionic 7 is set up for it: its SRAM also needs the power latch at
+  `0xFFF706`, which its own code would set.
+
+`BDMTOY_HW=1 BDMTOY_REF=$PWD/flash.bin go test ./bdm -run HardwareToy -v`
+runs Info, Identify, a flash dump compared against the reference, and an SRAM
+read against a connected bdmtoy. `BDMTOY_WRITE=$PWD/image.bin` also erases
+and writes that image first. `BDMTOY_UPDATE=1 go test ./bdm -run HardwareToyUpdate -v`
+updates the dongle with the built-in firmware.
 
 ## Credits
 
@@ -111,8 +158,8 @@ The Firmware menu flashes the firmware images built into BDM Tool.
 
 ## Identify ECU
 
-With an ardubdm, or a CombiAdapter on firmware 2.0 or later, connected, the
-"Identify ECU" button first halts the running
+With an ardubdm, a bdmtoy, or a CombiAdapter on firmware 2.0 or later,
+connected, the "Identify ECU" button first halts the running
 ECU and decodes its 68332 SIM registers into the log: CPU clock from SYNCR
 (16.78 MHz on a prepped T7), the reason for the last reset (RSR: power-on,
 external, watchdog, halt after a double bus fault, loss of clock), watchdog

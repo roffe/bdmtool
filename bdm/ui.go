@@ -1,5 +1,5 @@
 // Package bdm is BDM Tool -- reads and writes SAAB Trionic (and Volvo CEM) ECU
-// flash over BDM using a CombiAdapter, USB BDM, USB BDM MkII or ardubdm -- as
+// flash over BDM using a CombiAdapter, USB BDM, USB BDM MkII, ardubdm or bdmtoy -- as
 // a Fyne widget, so it runs standalone (the bdmtool command) or inside
 // another app such as txlogger.
 package bdm
@@ -28,7 +28,7 @@ import (
 
 // Adapter is the BDM transport the UI drives. The three adapters the stock
 // BDM Tool supported speak three different protocols; see combi.go and
-// usbbdm.go.
+// usbbdm.go. ardubdm.go and bdmtoy.go add two more.
 type Adapter interface {
 	Close()
 	Version() (major, minor byte, err error)
@@ -57,14 +57,17 @@ var adapters = []adapterDef{
 	{"CombiAdapter", openCombi},
 	{"USB BDM", opener(OpenBDM)},
 	{"USB BDM MkII", opener(OpenBDM2)},
+	{"bdmtoy", opener(OpenToy)},
 }
+
+var fixedAdapters = len(adapters)
 
 // One ardubdm entry per USB serial port present at startup.
 // refreshAdapters rebuilds the adapter list: the fixed ones plus one entry
 // per serial port an ardubdm could be on, so a board plugged in after start
 // shows up when the list is refreshed.
 func refreshAdapters() {
-	adapters = adapters[:3]
+	adapters = adapters[:fixedAdapters]
 	for _, p := range arduPorts() {
 		adapters = append(adapters, adapterDef{"ardubdm on " + p,
 			func() (Adapter, error) { return OpenArdu(p) }})
