@@ -90,11 +90,12 @@ type ArduBDM struct {
 
 // cpu32 is what the CPU32 flash drivers need from an adapter: block
 // transfers to and from target RAM, registers, and run until BGND. ardubdm
-// has them, and so does the CombiAdapter from firmware 2.0.
+// and bdmtoy have them, and so does the CombiAdapter from firmware 2.0.
 type cpu32 interface {
 	load(addr uint32, data []byte, prog progressFn) error
 	block(addr, n uint32) ([]byte, error)
 	writeMem(addr, val uint32, size int) error
+	readMem(addr uint32, size int) (uint32, error)
 	writeSysReg(reg byte, v uint32) error
 	readReg(n byte) (uint32, error)
 	RunWaitFor(addr uint32, limit time.Duration) (uint32, error)
@@ -549,18 +550,23 @@ type flashAlgo struct {
 
 // algo picks the host-side erase/program routines for the ECU's flash chips.
 func (a *ArduBDM) algo(e *ECU) (flashAlgo, error) {
-	f := a.drv()
+	if e.FlashType == "cmfi" {
+		return flashAlgo{a.eraseCMFI, a.programCMFI}, nil
+	}
+	return a.drv().algo(e)
+}
+
+// algo picks the erase/program routines that need only the cpu32 primitives.
+func (f *flasher) algo(e *ECU) (flashAlgo, error) {
 	switch e.FlashType {
 	case "29f010", "29f400":
-		return flashAlgo{a.eraseAM29, f.programAM29}, nil
+		return flashAlgo{f.eraseAM29, f.programAM29}, nil
 	case "28f010":
 		return flashAlgo{f.eraseAM28, f.programAM28}, nil
-	case "cmfi":
-		return flashAlgo{a.eraseCMFI, a.programCMFI}, nil
 	}
 	// ponytail: Volvo CEM's 28F400 needs the Intel block-erase/status flow,
 	// which Just4Trionic never had either. Add when someone has one to test.
-	return flashAlgo{}, fmt.Errorf("%s flash: erase/write not supported on ardubdm", e.FlashType)
+	return flashAlgo{}, fmt.Errorf("%s flash: erase/write not supported on this adapter", e.FlashType)
 }
 
 func (a *ArduBDM) EraseFlash(e *ECU, prog progressFn) error {
@@ -575,14 +581,20 @@ func (a *ArduBDM) EraseFlash(e *ECU, prog progressFn) error {
 }
 
 func (a *ArduBDM) WriteFlash(e *ECU, bin []byte, erase bool, prog progressFn) error {
-	if uint32(len(bin)) != e.FlashSize {
-		return fmt.Errorf("file is %d bytes, %s flash is %d", len(bin), e.Name, e.FlashSize)
-	}
 	f, err := a.algo(e)
 	if err != nil {
 		return err
 	}
-	if err := a.enterBDM(e); err != nil {
+	return flashWrite(e, bin, erase, prog, f, a.enterBDM)
+}
+
+// flashWrite is WriteFlash for adapters that erase and program from the host:
+// enter puts the ECU in BDM, then an optional erase and the program.
+func flashWrite(e *ECU, bin []byte, erase bool, prog progressFn, f flashAlgo, enter func(*ECU) error) error {
+	if uint32(len(bin)) != e.FlashSize {
+		return fmt.Errorf("file is %d bytes, %s flash is %d", len(bin), e.Name, e.FlashSize)
+	}
+	if err := enter(e); err != nil {
 		return err
 	}
 	if !erase {
@@ -611,33 +623,31 @@ func (a *ArduBDM) verify(addr uint32, want []byte) error {
 
 // ---- AMD 29Fxxx (T7, T8, retrofitted T5.5) ----
 
-// am29 is the three-write command sequence: 0x5555/0x2AAA word addresses
+// am29 sends three-write command sequences: 0x5555/0x2AAA word addresses
 // doubled for the 16 bit bus, the command byte on both lanes so T5.5's paired
 // 29F010 chips both see it. Addresses are absolute -- the chips answer at 0
 // on every ECU that carries them (T5.5 mirrors its flash there).
-func am29(cmd uint16) []req {
-	return []req{wordW(0xAAAA, 0xAAAA), wordW(0x5554, 0x5555), wordW(0xAAAA, cmd)}
-}
-
-func (a *ArduBDM) resetAM29() error { return a.drv().resetAM29() }
-
-func (f *flasher) resetAM29() error {
-	for _, w := range [][2]uint32{{0xAAAA, 0xAAAA}, {0x5554, 0x5555}, {0xAAAA, 0xF0F0}} {
-		if err := f.writeMem(w[0], w[1], 2); err != nil {
-			return err
+func (f *flasher) am29(cmds ...uint16) error {
+	for _, c := range cmds {
+		for _, w := range [][2]uint32{{0xAAAA, 0xAAAA}, {0x5554, 0x5555}, {0xAAAA, uint32(c)}} {
+			if err := f.writeMem(w[0], w[1], 2); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
+func (f *flasher) resetAM29() error { return f.am29(0xF0F0) }
+
 // eraseAM29 issues chip erase and polls the first word: data polling keeps it
 // off 0xFFFF until the chip is done.
-func (a *ArduBDM) eraseAM29(e *ECU, prog progressFn) error {
-	if err := a.resetAM29(); err != nil {
+func (f *flasher) eraseAM29(e *ECU, prog progressFn) error {
+	if err := f.resetAM29(); err != nil {
 		return err
 	}
-	if _, err := a.batch(append(am29(0x8080), am29(0x1010)...)); err != nil {
-		a.resetAM29()
+	if err := f.am29(0x8080, 0x1010); err != nil {
+		f.resetAM29()
 		return err
 	}
 	// Done when word 0 has read 0xFFFF three polls in a row and a spot check
@@ -646,12 +656,12 @@ func (a *ArduBDM) eraseAM29(e *ECU, prog progressFn) error {
 	deadline := time.Now().Add(am29EraseTimeout)
 	start := time.Now()
 	for clean := 0; ; {
-		r, err := a.cmd(grpMemory, cmdReadWord, hex32(e.FlashAddr), 4)
+		v, err := f.readMem(e.FlashAddr, 2)
 		if err != nil {
-			a.resetAM29()
+			f.resetAM29()
 			return fmt.Errorf("erase poll: %w", err)
 		}
-		if unhex16(r) == 0xFFFF {
+		if v == 0xFFFF {
 			clean++
 		} else {
 			clean = 0
@@ -660,22 +670,22 @@ func (a *ArduBDM) eraseAM29(e *ECU, prog progressFn) error {
 		if p := uint64(e.FlashSize) * uint64(time.Since(start)) / uint64(am29EraseTypical); p < uint64(e.FlashSize)-1 {
 			prog(uint32(p))
 		}
-		if clean >= 3 && a.blankAt(e.FlashAddr) && a.blankAt(e.FlashAddr+e.FlashSize/2) && a.blankAt(e.FlashAddr+e.FlashSize-256) {
+		if clean >= 3 && f.blankAt(e.FlashAddr) && f.blankAt(e.FlashAddr+e.FlashSize/2) && f.blankAt(e.FlashAddr+e.FlashSize-256) {
 			break
 		}
 		if time.Now().After(deadline) {
-			a.resetAM29()
+			f.resetAM29()
 			return errors.New("flash erase timed out")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	prog(e.FlashSize)
-	return a.resetAM29()
+	return f.resetAM29()
 }
 
 // blankAt reports whether the 256 bytes at addr read as erased.
-func (a *ArduBDM) blankAt(addr uint32) bool {
-	got, err := a.block(addr, 256)
+func (f *flasher) blankAt(addr uint32) bool {
+	got, err := f.block(addr, 256)
 	return err == nil && erased(got)
 }
 
@@ -922,9 +932,7 @@ func info(p prober) (string, error) {
 		fmt.Fprintf(&b, "  MC68377 (MCR %04X); SIM decode not implemented for it\n", simcr)
 		return b.String(), nil
 	}
-	// SYNCR: W bit 15, X bit 14, Y bits 13-8; fsys = 4 * 32768 * (Y+1) * 2^(2W+X)
-	w, x, y := syncr>>15&1, syncr>>14&1, syncr>>8&0x3f
-	fsys := 4.0 * 32768 * float64(y+1) * float64(uint(1)<<(2*w+x))
+	fsys := syncrHz(syncr)
 	fmt.Fprintf(&b, "  SIMCR %04X  SYNCR %04X: CPU clock %.2f MHz\n", simcr, syncr, fsys/1e6)
 	reasons := ""
 	for bit, name := range map[uint]string{7: "external", 6: "power-on", 5: "software watchdog", 4: "halt (double bus fault)", 2: "loss of clock", 1: "RESET instruction", 0: "test"} {
@@ -976,6 +984,13 @@ func info(p prober) (string, error) {
 		fmt.Fprintf(&b, "    %-6s %06X size %-4s %-10s %-11s %s\n", name, uint32(bar&0xfff8)<<8, sizes[bar&7], rw, bytes, ws)
 	}
 	return b.String(), nil
+}
+
+// syncrHz is the 68332 system clock a SYNCR value sets, with the 32.768 kHz
+// crystal: W bit 15, X bit 14, Y bits 13-8; fsys = 4 * 32768 * (Y+1) * 2^(2W+X).
+func syncrHz(syncr uint16) float64 {
+	w, x, y := syncr>>15&1, syncr>>14&1, syncr>>8&0x3f
+	return 4.0 * 32768 * float64(y+1) * float64(uint(1)<<(2*w+x))
 }
 
 // uploadDriver maps the driver RAM, writes drv there and reads it back.
