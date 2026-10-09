@@ -53,7 +53,7 @@ func (u *UI) uploadToy(name string, fw []byte) {
 // (combiflash.go).
 func (u *UI) uploadCombi(name string, fw []byte) {
 	dialog.ShowConfirm("CombiAdapter firmware",
-		"Flash the "+name+" firmware to the CombiAdapter?",
+		"Flash the "+name+" firmware to the CombiAdapter?\nWith firmware older than 2.0, unplug and replug the adapter when the log asks.",
 		func(ok bool) {
 			if !ok || u.busy.Load() {
 				return

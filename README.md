@@ -151,9 +151,9 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   firmware over the adapter's USB bootloader. It takes 10 to 15 seconds and
   the adapter restarts when it is done. On Windows, 2.1 needs no Zadig:
   Windows installs WinUSB for it on its own. Firmware 2.0 and later reboot into
-  the bootloader on request. With older firmware the bootloader is only there
-  for about 4 seconds after power-up: unplug the adapter, plug it back in and
-  start the upload within that time. The bootloader itself is never
+  the bootloader on request. Older firmware can't, so the upload asks you to
+  unplug the adapter and plug it back in, waits up to 30 seconds for that, and
+  catches the bootloader in the 4 seconds it runs after power-up. The bootloader itself is never
   overwritten, so a failed upload can always be repeated. Only the original
   LPC1768 CombiAdapter is supported; STM32 clones are refused.
 - **bdmtoy → 2.2 (latest)** writes bdmtoy firmware over its USB bootloader (firmware

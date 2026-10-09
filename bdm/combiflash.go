@@ -2,8 +2,8 @@
 //
 // The bootloader runs for about 4 s after every reset or power-up. If the
 // adapter is already running its app, fw 2.0 and later reboot into the
-// bootloader on request (command 0x26); with older firmware, plug the adapter
-// in and start the upload within 4 s.
+// bootloader on request (command 0x26); with older firmware the upload waits
+// for the user to replug the adapter and catches the bootloader then.
 //
 // The bootloader speaks an ASCII protocol on the same USB id/endpoints as the
 // app (ffff:0005, OUT 0x05 / IN 0x82): send "UPDT\r", get "RDY\r" (4-byte
@@ -32,22 +32,17 @@ func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
 		logf("CombiAdapter is running its firmware, rebooting it into the bootloader")
 		err = c.bootReboot()
 		c.Close()
-		if err != nil {
-			return fmt.Errorf("%w\nthe adapter's firmware can't reboot into the bootloader (needs 2.0 or later): unplug the adapter, plug it back in and start the upload again within 4 s", err)
-		}
-		// The bootloader only waits ~4 s for UPDT, so give up after that. The
-		// first tries can still hit the app on its way down, or udev setting
-		// the new device up.
-		for deadline := time.Now().Add(4 * time.Second); ; {
-			time.Sleep(50 * time.Millisecond)
-			if c, block, err = bootOpen(); err == nil {
-				break
-			}
-			if c != nil {
-				c.Close()
-			}
-			if time.Now().After(deadline) {
+		if err == nil {
+			// The bootloader only waits ~4 s for UPDT, so give up after that.
+			if c, block, err = bootWait(4 * time.Second); err != nil {
 				return fmt.Errorf("adapter didn't come back after rebooting into the bootloader: %w", err)
+			}
+		} else {
+			// 1.x can't reboot itself; a replug starts the bootloader, so
+			// catch it then instead of making the user race its 4 s window.
+			logf("The adapter's firmware can't reboot into the bootloader (%v; needs 2.0 or later).\nUnplug the CombiAdapter and plug it back in now (waiting 30 s)", err)
+			if c, block, err = bootWait(30 * time.Second); err != nil {
+				return fmt.Errorf("no bootloader within 30 s, was the adapter replugged? %w", err)
 			}
 		}
 	}
@@ -101,6 +96,25 @@ func bootOpen() (*Combi, int, error) {
 		return c, 4, nil
 	}
 	return c, 0, fmt.Errorf("no bootloader sign-in reply (got %q)", reply)
+}
+
+// bootWait polls for the bootloader until limit. Tries can still hit the
+// app (on its way down, or not yet replugged), an unplugged adapter, or udev
+// setting the new device up.
+func bootWait(limit time.Duration) (*Combi, int, error) {
+	for deadline := time.Now().Add(limit); ; {
+		time.Sleep(50 * time.Millisecond)
+		c, block, err := bootOpen()
+		if err == nil {
+			return c, block, nil
+		}
+		if c != nil {
+			c.Close()
+		}
+		if time.Now().After(deadline) {
+			return nil, 0, err
+		}
+	}
 }
 
 // bootReboot asks a running app to reset into the bootloader:
