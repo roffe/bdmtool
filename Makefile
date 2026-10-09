@@ -8,7 +8,7 @@ default: bdmtool
 firmwares/ardubdm.hex: $(HOME)/Documents/PlatformIO/Projects/ardubdm/.pio/build/ATmega328PB/firmware.hex
 	cp $< $@
 
-firmwares/combiadapter.bin: $(HOME)/devel/CombiAdapter2/firmware2.0/combi-firmware-2.1.bin
+firmwares/combiadapter.bin: $(HOME)/devel/CombiAdapter2/firmware/combi-firmware-2.2.bin
 	cp $< $@
 
 firmwares/bdmtoy.bin: $(HOME)/OneDrive/devel/bdmtoy/firmware/bin/firmware.bin
