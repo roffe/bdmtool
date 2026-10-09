@@ -175,11 +175,15 @@ func (c *Combi) write(p []byte) error {
 		_, err := c.out.Write(p)
 		return err
 	}
+	var n int
 	var err error
 	if c.useEP2 {
-		_, err = c.h.BulkTransferOut(outEP2, p, c.tmo)
+		n, err = c.h.BulkTransferOut(outEP2, p, c.tmo)
 	} else {
-		_, err = c.h.BulkTransferOut(outEP5, p, c.tmo)
+		n, err = c.h.BulkTransferOut(outEP5, p, c.tmo)
+	}
+	if err == nil && n != len(p) {
+		err = fmt.Errorf("short write %d/%d", n, len(p))
 	}
 	return err
 }
