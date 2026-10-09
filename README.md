@@ -157,6 +157,18 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   catches the bootloader in the 4 seconds it runs after power-up. The bootloader itself is never
   overwritten, so a failed upload can always be repeated. Only the original
   LPC1768 CombiAdapter is supported; STM32 clones are refused.
+- **CombiAdapter → Bootloader + 2.2 (latest)** replaces the adapter's
+  bootloader with bootloader 2.0, then writes 2.2 through it. Bootloader 2.0
+  flashes firmware in about a second, and hands USB over to the firmware
+  without the adapter dropping off the bus. It first uploads bootloader 2.0's
+  installer as the firmware, the same way as above. The installer then writes
+  the new bootloader, erases itself and restarts the adapter, and bootloader 2.0
+  waits, with no time limit, for the firmware that follows. Keep the adapter
+  plugged in: if it loses power during the half second the bootloader is
+  written, it can only be recovered over SWD or the LPC17xx ROM ISP. If the
+  flow stops after the install, the adapter stays in bootloader 2.0 and
+  **2.2 (latest)** finishes the job. Running it again on bootloader 2.0 only
+  rewrites the firmware.
 - **bdmtoy → 2.2 (latest)** writes bdmtoy firmware over its USB bootloader (firmware
   2.0 or later, see [bdmtoy](#bdmtoy)) in about 7 seconds, then reports the
   version it restarted with. An update that is cut off leaves the dongle in

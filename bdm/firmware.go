@@ -22,6 +22,7 @@ func (u *UI) combiMenu() *fyne.MenuItem {
 	m.ChildMenu = fyne.NewMenu("",
 		fyne.NewMenuItem("1.1 (legacy)", func() { u.uploadCombi("1.1 (legacy)", firmwares.CombiAdapter111Bin) }),
 		fyne.NewMenuItem("2.2 (latest)", func() { u.uploadCombi("2.2 (latest)", firmwares.CombiAdapterBin) }),
+		fyne.NewMenuItem("Bootloader + 2.2 (latest)", func() { u.uploadCombiBoot("2.2 (latest)", firmwares.CombiAdapterBin) }),
 	)
 	return m
 }
@@ -61,6 +62,27 @@ func (u *UI) uploadCombi(name string, fw []byte) {
 			u.Disconnect() // the bootloader needs the USB interface we hold
 			u.work("Upload CombiAdapter firmware", uint32(len(fw)), func(p progressFn) error {
 				return flashCombi(fw, u.logf, p)
+			})
+		}, u.win)
+}
+
+// uploadCombiBoot installs bootloader 2.0 on the CombiAdapter, then fw
+// (installCombiBoot).
+func (u *UI) uploadCombiBoot(name string, fw []byte) {
+	inst := firmwares.CombiBootInstallerBin
+	dialog.ShowConfirm("CombiAdapter bootloader",
+		"Install bootloader 2.0 on the CombiAdapter, then the "+name+" firmware?\n"+
+			"With firmware older than 2.0, unplug and replug the adapter when the log asks.\n\n"+
+			"Keep the adapter plugged in until this is done: if it loses power while\n"+
+			"the bootloader is written (about half a second), it can only be\n"+
+			"recovered over SWD or the LPC17xx ROM ISP.",
+		func(ok bool) {
+			if !ok || u.busy.Load() {
+				return
+			}
+			u.Disconnect() // the bootloader needs the USB interface we hold
+			u.work("Install CombiAdapter bootloader", uint32(len(inst)+len(fw)), func(p progressFn) error {
+				return installCombiBoot(inst, fw, u.logf, p)
 			})
 		}, u.win)
 }

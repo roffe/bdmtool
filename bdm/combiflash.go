@@ -22,9 +22,61 @@ const bootTimeout = 3000 // ms
 
 // flashCombi writes fw to a CombiAdapter.
 func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
+	c, block, err := bootEnter(logf)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if err := bootSend(c, block, fw, prog); err != nil {
+		return err
+	}
+	logf("Firmware updated, CombiAdapter restarting")
+	return nil
+}
+
+// installCombiBoot replaces the adapter's bootloader with bootloader 2.0,
+// then writes fw through it. inst is bootloader 2.0's installer: an app that
+// checks the bootloader it carries, writes it to sectors 0-2 (~0.4 s), drops
+// off USB, erases itself and resets. Run on bootloader 2.0 it only does the
+// last part.
+func installCombiBoot(inst, fw []byte, logf func(string, ...any), prog progressFn) error {
+	c, block, err := bootEnter(logf)
+	if err != nil {
+		return err
+	}
+	err = bootSend(c, block, inst, prog)
+	c.Close()
+	if err != nil {
+		return fmt.Errorf("installer: %w", err)
+	}
+	logf("Installing bootloader 2.0, keep the adapter plugged in")
+	// The old bootloader starts the installer on EXIT; the pause keeps our
+	// UPDT off it until it has. Bootloader 2.0 then finds no app and waits
+	// for one, so there's no window to hit; 60 s covers Windows installing a
+	// driver for the new device first.
+	time.Sleep(time.Second)
+	if c, block, err = bootWait(60 * time.Second); err != nil {
+		return fmt.Errorf("bootloader 2.0 didn't come up (%w)\nIf the error LED blinks, the installer refused its copy and left the old bootloader in place", err)
+	}
+	defer c.Close()
+	if block != 200 {
+		return errors.New("the old bootloader answered, not bootloader 2.0: the installer didn't run")
+	}
+	logf("Bootloader 2.0 installed")
+	n := uint32(len(inst))
+	if err := bootSend(c, block, fw, func(d uint32) { prog(n + d) }); err != nil {
+		return err
+	}
+	logf("Firmware updated, CombiAdapter restarting")
+	return nil
+}
+
+// bootEnter returns the adapter signed in to its bootloader, rebooting a
+// running app into it.
+func bootEnter(logf func(string, ...any)) (*Combi, int, error) {
 	c, block, err := bootOpen()
 	if c == nil {
-		return err
+		return nil, 0, err
 	}
 	if err != nil {
 		// Not the bootloader, so the app is running: ask it to reboot into
@@ -35,20 +87,23 @@ func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
 		if err == nil {
 			// The bootloader only waits ~4 s for UPDT, so give up after that.
 			if c, block, err = bootWait(4 * time.Second); err != nil {
-				return fmt.Errorf("adapter didn't come back after rebooting into the bootloader: %w", err)
+				return nil, 0, fmt.Errorf("adapter didn't come back after rebooting into the bootloader: %w", err)
 			}
 		} else {
 			// 1.x can't reboot itself; a replug starts the bootloader, so
 			// catch it then instead of making the user race its 4 s window.
 			logf("The adapter's firmware can't reboot into the bootloader (%v; needs 2.0 or later).\nUnplug the CombiAdapter and plug it back in now (waiting 30 s)", err)
 			if c, block, err = bootWait(30 * time.Second); err != nil {
-				return fmt.Errorf("no bootloader within 30 s, was the adapter replugged? %w", err)
+				return nil, 0, fmt.Errorf("no bootloader within 30 s, was the adapter replugged? %w", err)
 			}
 		}
 	}
-	defer c.Close()
 	logf("Bootloader ready, block size %d", block)
+	return c, block, nil
+}
 
+// bootSend streams fw to a signed-in bootloader, then EXIT starts it.
+func bootSend(c *Combi, block int, fw []byte, prog progressFn) error {
 	for off := 0; off < len(fw); off += block {
 		if err := c.write(bootBlock(fw, off, block)); err != nil {
 			return fmt.Errorf("write at %#x: %w", off, err)
@@ -65,7 +120,6 @@ func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
 	if err := c.write([]byte("EXIT\r")); err != nil {
 		return fmt.Errorf("EXIT: %w", err)
 	}
-	logf("Firmware updated, CombiAdapter restarting")
 	return nil
 }
 
