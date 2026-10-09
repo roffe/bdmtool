@@ -81,6 +81,24 @@ jobs:
     - name: Creating Zip
       run: 7z a bdmtool_windows_x64.zip BDMTool.exe .\vcpkg\packages\libusb_x64-windows\bin\libusb-1.0.dll
 
+    # Unsigned on purpose: the Store signs it. Upload it in Partner Center.
+    - name: Build MSIX
+      run: |
+        $ver = (Select-String -Path FyneApp.toml -Pattern '^Version = "(.*)"').Matches[0].Groups[1].Value + ".0"
+        New-Item -ItemType Directory -Force pkg\Assets | Out-Null
+        Copy-Item BDMTool.exe, .\vcpkg\packages\libusb_x64-windows\bin\libusb-1.0.dll pkg\
+        Copy-Item msix\Assets\* pkg\Assets\
+        (Get-Content msix\AppxManifest.xml) -replace 'Version="0.0.0.0"', "Version=`"$ver`"" | Set-Content pkg\AppxManifest.xml
+        $makeappx = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
+        & $makeappx pack /o /d pkg /p BDMTool.msix
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+    - name: Upload MSIX
+      uses: actions/upload-artifact@v4
+      with:
+        name: BDMTool-msix
+        path: BDMTool.msix
+
     - name: Release
       uses: softprops/action-gh-release@v3
       if: github.ref_type == 'tag'
