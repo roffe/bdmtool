@@ -16,8 +16,8 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/software"
 
-	"github.com/roffe/bdmtool/bdm"
-	"github.com/roffe/bdmtool/icons"
+	"github.com/roffe/bdmtool/v3/bdm"
+	"github.com/roffe/bdmtool/v3/icons"
 	"github.com/roffe/browse"
 )
 

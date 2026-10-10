@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/roffe/bdmtool/firmwares"
+	"github.com/roffe/bdmtool/v3/firmwares"
 )
 
 // TestHardwareToy identifies the ECU on a real bdmtoy and dumps its flash and

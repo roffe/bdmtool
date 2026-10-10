@@ -1,4 +1,4 @@
-module github.com/roffe/bdmtool
+module github.com/roffe/bdmtool/v3
 
 go 1.27.1
 

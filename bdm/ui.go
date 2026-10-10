@@ -23,7 +23,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/roffe/bdmtool/icons"
+	"github.com/roffe/bdmtool/v3/icons"
 )
 
 // Adapter is the BDM transport the UI drives. The three adapters the stock

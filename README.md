@@ -67,7 +67,7 @@ To regenerate the screenshot above (renders offscreen, no display needed):
 
 ## Embedding
 
-The tool is package `github.com/roffe/bdmtool/bdm`, a Fyne widget; `main.go`
+The tool is package `github.com/roffe/bdmtool/v3/bdm`, a Fyne widget; `main.go`
 is just the standalone window around it. To host it in another Fyne app:
 
 ```go

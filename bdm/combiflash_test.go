@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/roffe/bdmtool/firmwares"
+	"github.com/roffe/bdmtool/v3/firmwares"
 	"go.bug.st/serial"
 )
 

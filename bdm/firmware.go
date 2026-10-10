@@ -6,7 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"github.com/roffe/avrflash"
-	"github.com/roffe/bdmtool/firmwares"
+	"github.com/roffe/bdmtool/v3/firmwares"
 )
 
 func (u *UI) ardubdmMenu() *fyne.MenuItem {
