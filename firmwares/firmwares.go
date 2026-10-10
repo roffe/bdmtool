@@ -17,6 +17,11 @@ var CombiAdapter111Bin []byte
 //go:embed combi-bootloader-installer.bin
 var CombiBootInstallerBin []byte
 
+// The same installer carrying the original 1.0 bootloader, to go back
+//
+//go:embed combi-bootloader-1.0-installer.bin
+var CombiBoot10InstallerBin []byte
+
 // The bdmtoy app (2.0+), for its USB DFU bootloader
 //
 //go:embed bdmtoy.bin

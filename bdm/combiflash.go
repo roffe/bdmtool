@@ -34,35 +34,37 @@ func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
 	return nil
 }
 
-// installCombiBoot replaces the adapter's bootloader with bootloader 2.0,
-// then writes fw through it. inst is bootloader 2.0's installer: an app that
+// installCombiBoot replaces the adapter's bootloader with bootloader ver,
+// then writes fw through it. inst is that bootloader's installer: an app that
 // checks the bootloader it carries, writes it to sectors 0-2 (~0.4 s), drops
-// off USB, erases itself and resets. Run on bootloader 2.0 it only does the
-// last part.
-func installCombiBoot(inst, fw []byte, logf func(string, ...any), prog progressFn) error {
-	c, block, err := bootEnter(logf)
+// off USB, erases itself and resets. Run on that bootloader already, it only
+// does the last part. block is the line size ver signs in with: 200 for 2.0,
+// 4 for 1.0.
+func installCombiBoot(ver string, block int, inst, fw []byte, logf func(string, ...any), prog progressFn) error {
+	c, got, err := bootEnter(logf)
 	if err != nil {
 		return err
 	}
-	err = bootSend(c, block, inst, prog)
+	err = bootSend(c, got, inst, prog)
 	c.Close()
 	if err != nil {
 		return fmt.Errorf("installer: %w", err)
 	}
-	logf("Installing bootloader 2.0, keep the adapter plugged in")
+	logf("Installing bootloader %s, keep the adapter plugged in", ver)
 	// The old bootloader starts the installer on EXIT; the pause keeps our
-	// UPDT off it until it has. Bootloader 2.0 then finds no app and waits
-	// for one, so there's no window to hit; 60 s covers Windows installing a
-	// driver for the new device first.
+	// UPDT off it until it has. The new bootloader then finds no app and
+	// waits for one, so there's no window to hit; 60 s covers Windows
+	// installing a driver for the new device first.
 	time.Sleep(time.Second)
-	if c, block, err = bootWait(60 * time.Second); err != nil {
-		return fmt.Errorf("bootloader 2.0 didn't come up (%w)\nIf the error LED blinks, the installer refused its copy and left the old bootloader in place", err)
+	if c, got, err = bootWait(60 * time.Second); err != nil {
+		return fmt.Errorf("bootloader %s didn't come up (%w)\nIf the error LED blinks, the installer refused its copy and left the old bootloader in place.\n"+
+			"On Windows, if the adapter shows up as a COM port, the bootloader is in but has the serial driver: switch it to WinUSB with Zadig, then flash the firmware from this menu to finish", ver, err)
 	}
 	defer c.Close()
-	if block != 200 {
-		return errors.New("the old bootloader answered, not bootloader 2.0: the installer didn't run")
+	if got != block {
+		return fmt.Errorf("the old bootloader answered, not bootloader %s: the installer didn't run", ver)
 	}
-	logf("Bootloader 2.0 installed")
+	logf("Bootloader %s installed", ver)
 	n := uint32(len(inst))
 	if err := bootSend(c, block, fw, func(d uint32) { prog(n + d) }); err != nil {
 		return err

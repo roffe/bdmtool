@@ -157,7 +157,7 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   catches the bootloader in the 4 seconds it runs after power-up. The bootloader itself is never
   overwritten, so a failed upload can always be repeated. Only the original
   LPC1768 CombiAdapter is supported; STM32 clones are refused.
-- **CombiAdapter → Bootloader + 2.2 (latest)** replaces the adapter's
+- **CombiAdapter → Bootloader 2.0 + 2.2 (latest)** replaces the adapter's
   bootloader with bootloader 2.0, then writes 2.2 through it. Bootloader 2.0
   flashes firmware in about a second, and hands USB over to the firmware
   without the adapter dropping off the bus. It first uploads bootloader 2.0's
@@ -169,6 +169,18 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   flow stops after the install, the adapter stays in bootloader 2.0 and
   **2.2 (latest)** finishes the job. Running it again on bootloader 2.0 only
   rewrites the firmware.
+- **CombiAdapter → Bootloader 1.0 (original) + 2.2** goes back: the same
+  flow with an installer carrying the adapter's original 1.0 bootloader, then
+  2.2 through it in 4-byte lines (about 7 seconds). **Bootloader 1.0
+  (original) + 1.1 (legacy)** does the same with 1.1, restoring a stock
+  adapter. The same power warning
+  applies. The 1.0 bootloader and 1.x firmware enumerate with serial `BEEF`
+  and no WinUSB descriptors, like a stock adapter, so Windows shows them as a
+  COM port or as a device with no driver, and BDM Tool can't reach the
+  bootloader to write the firmware. Switch the CombiAdapter (`FFFF 0005`) to
+  WinUSB with Zadig (Options → List All Devices); the adapter waits in the
+  bootloader meanwhile, and **1.1 (legacy)** or **2.2 (latest)** finishes the
+  job. Stock 1.1 needs that driver on Windows anyway.
 - **bdmtoy → 2.2 (latest)** writes bdmtoy firmware over its USB bootloader (firmware
   2.0 or later, see [bdmtoy](#bdmtoy)) in about 7 seconds, then reports the
   version it restarted with. An update that is cut off leaves the dongle in

@@ -20,9 +20,18 @@ func (u *UI) ardubdmMenu() *fyne.MenuItem {
 func (u *UI) combiMenu() *fyne.MenuItem {
 	m := fyne.NewMenuItem("CombiAdapter", nil)
 	m.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("1.1 (legacy)", func() { u.uploadCombi("1.1 (legacy)", firmwares.CombiAdapter111Bin) }),
 		fyne.NewMenuItem("2.2 (latest)", func() { u.uploadCombi("2.2 (latest)", firmwares.CombiAdapterBin) }),
-		fyne.NewMenuItem("Bootloader + 2.2 (latest)", func() { u.uploadCombiBoot("2.2 (latest)", firmwares.CombiAdapterBin) }),
+		fyne.NewMenuItem("Bootloader 2.0 + 2.2 (latest)", func() {
+			u.uploadCombiBoot("2.0", 200, firmwares.CombiBootInstallerBin, "2.2 (latest)", firmwares.CombiAdapterBin)
+		}),
+		fyne.NewMenuItem("Bootloader 1.0 (original) + 2.2", func() {
+			u.uploadCombiBoot("1.0", 4, firmwares.CombiBoot10InstallerBin, "2.2 (latest)", firmwares.CombiAdapterBin)
+		}),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("1.1 (legacy)", func() { u.uploadCombi("1.1 (legacy)", firmwares.CombiAdapter111Bin) }),
+		fyne.NewMenuItem("Bootloader 1.0 (original) + 1.1 (legacy)", func() {
+			u.uploadCombiBoot("1.0", 4, firmwares.CombiBoot10InstallerBin, "1.1 (legacy)", firmwares.CombiAdapter111Bin)
+		}),
 	)
 	return m
 }
@@ -66,12 +75,11 @@ func (u *UI) uploadCombi(name string, fw []byte) {
 		}, u.win)
 }
 
-// uploadCombiBoot installs bootloader 2.0 on the CombiAdapter, then fw
-// (installCombiBoot).
-func (u *UI) uploadCombiBoot(name string, fw []byte) {
-	inst := firmwares.CombiBootInstallerBin
+// uploadCombiBoot installs bootloader ver on the CombiAdapter with its
+// installer inst, then fw (installCombiBoot).
+func (u *UI) uploadCombiBoot(ver string, block int, inst []byte, name string, fw []byte) {
 	dialog.ShowConfirm("CombiAdapter bootloader",
-		"Install bootloader 2.0 on the CombiAdapter, then the "+name+" firmware?\n"+
+		"Install bootloader "+ver+" on the CombiAdapter, then the "+name+" firmware?\n"+
 			"With firmware older than 2.0, unplug and replug the adapter when the log asks.\n\n"+
 			"Keep the adapter plugged in until this is done: if it loses power while\n"+
 			"the bootloader is written (about half a second), it can only be\n"+
@@ -82,7 +90,7 @@ func (u *UI) uploadCombiBoot(name string, fw []byte) {
 			}
 			u.Disconnect() // the bootloader needs the USB interface we hold
 			u.work("Install CombiAdapter bootloader", uint32(len(inst)+len(fw)), func(p progressFn) error {
-				return installCombiBoot(inst, fw, u.logf, p)
+				return installCombiBoot(ver, block, inst, fw, u.logf, p)
 			})
 		}, u.win)
 }
