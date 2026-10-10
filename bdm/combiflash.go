@@ -157,7 +157,7 @@ func bootOpen() (*Combi, int, error) {
 // setting the new device up.
 func bootWait(limit time.Duration) (*Combi, int, error) {
 	for deadline := time.Now().Add(limit); ; {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 		c, block, err := bootOpen()
 		if err == nil {
 			return c, block, nil
