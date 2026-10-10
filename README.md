@@ -176,11 +176,11 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   adapter. The same power warning
   applies. The 1.0 bootloader and 1.x firmware enumerate with serial `BEEF`
   and no WinUSB descriptors, like a stock adapter, so Windows shows them as a
-  COM port or as a device with no driver, and BDM Tool can't reach the
-  bootloader to write the firmware. Switch the CombiAdapter (`FFFF 0005`) to
-  WinUSB with Zadig (Options → List All Devices); the adapter waits in the
-  bootloader meanwhile, and **1.1 (legacy)** or **2.2 (latest)** finishes the
-  job. Stock 1.1 needs that driver on Windows anyway.
+  COM port or as a device with no driver. On a COM port BDM Tool flashes
+  through it. With no driver, give the CombiAdapter (`FFFF 0005`) WinUSB with
+  Zadig (Options → List All Devices); the adapter waits in the bootloader
+  meanwhile, and **1.1 (legacy)** or **2.2 (latest)** finishes the job. Using
+  1.x for BDM or CAN on Windows needs that driver anyway.
 - **bdmtoy → 2.2 (latest)** writes bdmtoy firmware over its USB bootloader (firmware
   2.0 or later, see [bdmtoy](#bdmtoy)) in about 7 seconds, then reports the
   version it restarted with. An update that is cut off leaves the dongle in
