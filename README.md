@@ -59,6 +59,8 @@ go build -o bdmtool .
 ./bdmtool
 ```
 
+If the window opens blank on Windows (a broken OpenGL driver), use the DirectX build instead: `bdmtool_windows_x64_directx.zip` from the releases, or build it with `-tags directx` (`make bdmtool-directx.exe` cross-compiles it). It renders through Direct3D 11 and needs no OpenGL.
+
 To regenerate the screenshot above (renders offscreen, no display needed):
 
 ```sh

@@ -1,4 +1,4 @@
-.PHONY: bdmtool appimage clean run firmwares
+.PHONY: bdmtool bdmtool.exe bdmtool-directx.exe appimage clean run firmwares
 
 VERSION=$(shell sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml)
 APPIMAGETOOL=.tmp/appimagetool
@@ -25,14 +25,20 @@ firmwares: firmwares/ardubdm.hex firmwares/combiadapter.bin firmwares/combi-boot
 run: firmwares
 	go run -tags=wayland .
 
-bdmtool.exe:
-	CGO_CFLAGS="-I/home/roffe/go/src/github.com/roffe/txlogger/vcpkg/packages/libusb_x64-windows/include/libusb-1.0" \
+WINENV=CGO_CFLAGS="-I/home/roffe/go/src/github.com/roffe/txlogger/vcpkg/packages/libusb_x64-windows/include/libusb-1.0" \
       CGO_LDFLAGS="-L/home/roffe/go/src/github.com/roffe/txlogger/vcpkg/packages/libusb_x64-windows/lib" \
       CGO_ENABLED=1 \
       CC=x86_64-w64-mingw32-gcc \
       GOARCH=amd64 \
-      GOOS=windows \
-      fyne package --os windows --release
+      GOOS=windows
+
+bdmtool.exe:
+	$(WINENV) fyne package --os windows --release
+
+# Direct3D 11 renderer (fyne fork) for machines whose OpenGL driver shows a blank window
+bdmtool-directx.exe:
+	$(WINENV) fyne package --os windows --release --tags directx
+	mv BDMTool.exe BDMTool-directx.exe
 
 bdmtool:
 	go build -ldflags '-s -w' -o bdmtool .
