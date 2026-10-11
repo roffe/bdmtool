@@ -38,7 +38,7 @@ bdmtool.exe:
 # Direct3D 11 renderer (fyne fork) for machines whose OpenGL driver shows a blank window
 bdmtool-directx.exe:
 	$(WINENV) fyne package --os windows --release --tags directx
-	mv BDMTool.exe BDMTool-directx.exe
+	mv BDMTool.exe BDMTool-directx.exe # fyne package always names it after FyneApp.toml's Name
 
 bdmtool:
 	go build -ldflags '-s -w' -o bdmtool .
