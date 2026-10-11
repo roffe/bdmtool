@@ -121,6 +121,7 @@ type UI struct {
 	logText   strings.Builder
 	logLabel  *widget.Label
 	logScroll *container.Scroll
+	logFile   *os.File
 }
 
 // New builds BDM Tool's panel; it is ready to drop into a window.
@@ -128,6 +129,12 @@ func New(cfg *Config) *UI {
 	u := &UI{cfg: cfg, win: cfg.Window}
 	u.content = u.build()
 	u.ExtendBaseWidget(u)
+	// ponytail: never closed, unbuffered writes so the OS closing it at exit loses nothing
+	f, err := os.OpenFile("ui.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		u.logf("ui.log: %v", err)
+	}
+	u.logFile = f
 	return u
 }
 
@@ -355,16 +362,18 @@ func (u *UI) toggleConnect() {
 			u.c = c
 			debugLog = u.logf
 			statusLog = func(t string) { fyne.Do(func() { setText(u.status, t) }) }
+			name := adapters[sel].name
 			if verr != nil {
 				u.logf("firmware version unavailable: %v", verr)
 				setText(u.adapter, "Connected")
 			} else {
 				setText(u.adapter, fmt.Sprintf("Connected (firmware v%d.%d)", major, minor))
+				name = fmt.Sprintf("%s v%d.%d", name, major, minor)
 			}
 			u.connectBtn.SetText("Disconnect")
 			u.adapterSel.Disable()
 			u.setOps(true)
-			u.logf("%s connected", adapters[sel].name)
+			u.logf("%s connected", name)
 		})
 	}()
 }
@@ -631,7 +640,11 @@ func (u *UI) save(name, ext string, fn func(io.WriteCloser)) {
 
 func (u *UI) logf(format string, args ...any) {
 	line := fmt.Sprintf(format, args...)
+	ts := time.Now().Format("2006-01-02 15:04:05.000")
 	write := func() {
+		if u.logFile != nil {
+			fmt.Fprintf(u.logFile, "%s %s\n", ts, line)
+		}
 		if u.logText.Len() > 0 {
 			u.logText.WriteString("\n")
 		}

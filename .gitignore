@@ -5,3 +5,4 @@ BDMTool-directx.exe
 *.AppImage
 go.work
 go.work.sum
+ui.log

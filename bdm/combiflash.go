@@ -26,14 +26,14 @@ import (
 
 const bootTimeout = 3000 // ms
 
-// flashCombi writes fw to a CombiAdapter.
-func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
+// flashCombi writes firmware name, fw, to a CombiAdapter.
+func flashCombi(name string, fw []byte, logf func(string, ...any), prog progressFn) error {
 	c, block, err := bootEnter(logf)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	logf("Installing firmware")
+	logf("Installing firmware %s", name)
 	if err := bootSend(c, block, fw, prog); err != nil {
 		return err
 	}
@@ -42,14 +42,15 @@ func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
 }
 
 // installCombiBoot replaces the adapter's bootloader with bootloader ver,
-// then writes fw through it. inst is that bootloader's installer: an app that
-// checks the bootloader it carries, writes it to sectors 0-2 (~0.4 s), drops
-// off USB, erases itself and resets. Run on that bootloader already, it only
-// does the last part. block is the line size ver signs in with: 200 for 2.0,
-// 4 for 1.0. status names the step under way for the status bar.
-func installCombiBoot(ver string, block int, inst, fw []byte, logf func(string, ...any), status func(string), prog progressFn) error {
+// then writes firmware name, fw, through it. inst is that bootloader's
+// installer: an app that checks the bootloader it carries, writes it to
+// sectors 0-2 (~0.4 s), drops off USB, erases itself and resets. Run on that
+// bootloader already, it only does the last part. block is the line size ver
+// signs in with: 200 for 2.0, 4 for 1.0. status names the step under way for
+// the status bar.
+func installCombiBoot(ver string, block int, inst []byte, name string, fw []byte, logf func(string, ...any), status func(string), prog progressFn) error {
 	status("Installing bootloader")
-	logf("Installing bootloader %s, keep the adapter plugged in", ver)
+	logf("Installing bootloader %s + firmware %s, keep the adapter plugged in", ver, name)
 	c, got, err := bootEnter(logf)
 	if err != nil {
 		return err
@@ -76,7 +77,7 @@ func installCombiBoot(ver string, block int, inst, fw []byte, logf func(string, 
 	}
 	logf("Bootloader %s installed%s", ver, via(c))
 	status("Installing firmware")
-	logf("Installing firmware")
+	logf("Installing firmware %s", name)
 	n := uint32(len(inst))
 	if err := bootSend(c, block, fw, func(d uint32) { prog(n + d) }); err != nil {
 		return err

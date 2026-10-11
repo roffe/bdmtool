@@ -70,7 +70,7 @@ func (u *UI) uploadCombi(name string, fw []byte) {
 			}
 			u.Disconnect() // the bootloader needs the USB interface we hold
 			u.work("Upload CombiAdapter firmware", uint32(len(fw)), func(p progressFn) error {
-				return flashCombi(fw, u.logf, p)
+				return flashCombi(name, fw, u.logf, p)
 			})
 		}, u.win)
 }
@@ -91,7 +91,7 @@ func (u *UI) uploadCombiBoot(ver string, block int, inst []byte, name string, fw
 			u.Disconnect() // the bootloader needs the USB interface we hold
 			u.work("Install CombiAdapter bootloader", uint32(len(inst)+len(fw)), func(p progressFn) error {
 				status := func(s string) { fyne.Do(func() { setText(u.status, s+"...") }) }
-				return installCombiBoot(ver, block, inst, fw, u.logf, status, p)
+				return installCombiBoot(ver, block, inst, name, fw, u.logf, status, p)
 			})
 		}, u.win)
 }

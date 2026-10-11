@@ -77,7 +77,7 @@ func TestHardwareCombiFlash(t *testing.T) {
 		t.Skip("set COMBI_HW=1 to run against an adapter")
 	}
 	last := uint32(0)
-	err := flashCombi(firmwares.CombiAdapterBin, t.Logf, func(done uint32) { last = done })
+	err := flashCombi("test", firmwares.CombiAdapterBin, t.Logf, func(done uint32) { last = done })
 	if err != nil {
 		t.Fatal(err)
 	}
