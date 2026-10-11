@@ -461,7 +461,7 @@ func (u *UI) work(name string, total uint32, fn func(progressFn) error) {
 				return
 			}
 			setText(u.status, "Idle")
-			u.logf("%s completed in %s", name, time.Since(start).Round(time.Second))
+			u.logf("Completed in %s", time.Since(start).Round(time.Second))
 		})
 	}()
 }

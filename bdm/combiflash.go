@@ -33,10 +33,11 @@ func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
 		return err
 	}
 	defer c.Close()
+	logf("Installing firmware")
 	if err := bootSend(c, block, fw, prog); err != nil {
 		return err
 	}
-	logf("Firmware updated, CombiAdapter restarting")
+	logf("Firmware installed, CombiAdapter restarting")
 	return nil
 }
 
@@ -45,18 +46,21 @@ func flashCombi(fw []byte, logf func(string, ...any), prog progressFn) error {
 // checks the bootloader it carries, writes it to sectors 0-2 (~0.4 s), drops
 // off USB, erases itself and resets. Run on that bootloader already, it only
 // does the last part. block is the line size ver signs in with: 200 for 2.0,
-// 4 for 1.0.
-func installCombiBoot(ver string, block int, inst, fw []byte, logf func(string, ...any), prog progressFn) error {
+// 4 for 1.0. status names the step under way for the status bar.
+func installCombiBoot(ver string, block int, inst, fw []byte, logf func(string, ...any), status func(string), prog progressFn) error {
+	status("Installing bootloader")
+	logf("Installing bootloader %s, keep the adapter plugged in", ver)
 	c, got, err := bootEnter(logf)
 	if err != nil {
 		return err
 	}
+	logf("Sending the bootloader %s installer", ver)
 	err = bootSend(c, got, inst, prog)
 	c.Close()
 	if err != nil {
 		return fmt.Errorf("installer: %w", err)
 	}
-	logf("Installing bootloader %s, keep the adapter plugged in", ver)
+	logf("Installer running, waiting for bootloader %s to come up", ver)
 	// The old bootloader starts the installer on EXIT; the pause keeps our
 	// UPDT off it until it has. The new bootloader then finds no app and
 	// waits for one, so there's no window to hit; 60 s covers Windows
@@ -71,11 +75,13 @@ func installCombiBoot(ver string, block int, inst, fw []byte, logf func(string, 
 		return fmt.Errorf("the old bootloader answered, not bootloader %s: the installer didn't run", ver)
 	}
 	logf("Bootloader %s installed%s", ver, via(c))
+	status("Installing firmware")
+	logf("Installing firmware")
 	n := uint32(len(inst))
 	if err := bootSend(c, block, fw, func(d uint32) { prog(n + d) }); err != nil {
 		return err
 	}
-	logf("Firmware updated, CombiAdapter restarting")
+	logf("Firmware installed, CombiAdapter restarting")
 	return nil
 }
 
@@ -90,13 +96,14 @@ func bootEnter(logf func(string, ...any)) (bootLink, int, error) {
 		// Not the bootloader, so the app is running: ask it to reboot into
 		// the bootloader, then find it again as a new USB device. An app on
 		// a COM port is 1.x: no WinUSB descriptors, no reboot command.
-		logf("CombiAdapter is running its firmware, rebooting it into the bootloader")
+		logf("CombiAdapter is running its firmware, restarting it into the bootloader")
 		err = errors.New("firmware on a COM port is 1.x")
 		if u, ok := c.(*Combi); ok {
 			err = u.bootReboot()
 		}
 		c.Close()
 		if err == nil {
+			logf("Waiting for the bootloader")
 			// The bootloader only waits ~4 s for UPDT, so give up after that.
 			if c, block, err = bootWait(4 * time.Second); err != nil {
 				return nil, 0, fmt.Errorf("adapter didn't come back after rebooting into the bootloader: %w", err)
@@ -110,7 +117,7 @@ func bootEnter(logf func(string, ...any)) (bootLink, int, error) {
 			}
 		}
 	}
-	logf("Bootloader ready, block size %d%s", block, via(c))
+	logf("Bootloader ready (%d-byte blocks)%s", block, via(c))
 	return c, block, nil
 }
 
