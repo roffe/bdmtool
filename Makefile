@@ -1,4 +1,4 @@
-.PHONY: bdmtool bdmtool.exe bdmtool-directx.exe appimage clean run firmwares
+.PHONY: bdmtool bdmtool.exe appimage clean run firmwares
 
 VERSION=$(shell sed -n 's/^Version = "\(.*\)"/\1/p' FyneApp.toml)
 APPIMAGETOOL=.tmp/appimagetool
@@ -8,7 +8,7 @@ default: bdmtool
 firmwares/ardubdm.hex: $(HOME)/Documents/PlatformIO/Projects/ardubdm/.pio/build/ATmega328PB/firmware.hex
 	cp $< $@
 
-firmwares/combiadapter.bin: $(HOME)/devel/CombiAdapter2/firmware/combi-firmware-2.3.bin
+firmwares/combiadapter.bin: $(HOME)/devel/CombiAdapter2/firmware/combi-firmware-2.4.bin
 	cp $< $@
 
 firmwares/combi-bootloader-installer.bin: $(HOME)/devel/CombiAdapter2/bootloader/combi-bootloader-2.0-installer.bin
@@ -35,10 +35,6 @@ WINENV=CGO_CFLAGS="-I/home/roffe/go/src/github.com/roffe/txlogger/vcpkg/packages
 bdmtool.exe:
 	$(WINENV) fyne package --os windows --release
 
-# Direct3D 11 renderer (fyne fork) for machines whose OpenGL driver shows a blank window
-bdmtool-directx.exe:
-	$(WINENV) fyne package --os windows --release --tags directx
-	mv BDMTool.exe BDMTool-directx.exe # fyne package always names it after FyneApp.toml's Name
 
 bdmtool:
 	go build -ldflags '-s -w' -o bdmtool .
