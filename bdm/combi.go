@@ -40,6 +40,7 @@ const (
 	termNak = 0xFF
 
 	cmdFWVersion = 0x20
+	cmdReadSelf  = 0x25 // fw 1.4, 2.4+: [addr u32][len u16] -> the adapter's own flash
 	cmdBootMode  = 0x26 // fw 2.0: reset into the bootloader
 
 	cmdBDMStop        = 0x40
@@ -289,6 +290,31 @@ func (c *Combi) Version() (major, minor byte, err error) {
 		return 0, 0, err
 	}
 	return d[1], d[0], nil
+}
+
+// readSelf copies n bytes of the adapter's own LPC17xx flash from addr to w,
+// 512 bytes per 0x25; 0x0000-0x3FFF is its bootloader. 2.4 NAKs a read past
+// the end of flash (128 KB on the V1, 256 KB on the V2), 1.4 hard-faults.
+func (c *Combi) readSelf(addr, n uint32, w io.Writer, prog progressFn) error {
+	major, minor, err := c.Version()
+	if err != nil {
+		return err
+	}
+	if !(major > 2 || major >= 1 && minor >= 4) {
+		return fmt.Errorf("firmware %d.%d can't read its own flash, it needs 1.4 or 2.4+", major, minor)
+	}
+	for off := uint32(0); off < n; off += 512 {
+		k := min(512, n-off)
+		d, err := c.cmd(cmdReadSelf, append(be32(addr+off), byte(k>>8), byte(k)), int(k))
+		if err != nil {
+			return fmt.Errorf("at 0x%X: %w", addr+off, err)
+		}
+		if _, err := w.Write(d); err != nil {
+			return err
+		}
+		prog(off + k)
+	}
+	return nil
 }
 
 // =====================

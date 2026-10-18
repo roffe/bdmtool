@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/driver/software"
 
 	"github.com/roffe/bdmtool/v3/bdm"
@@ -47,6 +48,8 @@ func main() {
 	}
 	w.SetContent(ui)
 	w.SetMainMenu(ui.Menu())
+	w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyD, Modifier: fyne.KeyModifierControl},
+		func(fyne.Shortcut) { ui.CombiDumpWindow() })
 	w.SetIcon(icons.Get("app"))
 	w.Resize(fyne.NewSize(470, 500))
 	w.SetOnClosed(ui.Disconnect)

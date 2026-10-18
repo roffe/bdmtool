@@ -1,10 +1,16 @@
 package bdm
 
 import (
+	"bufio"
+	"fmt"
+	"io"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/widget"
 	"github.com/roffe/avrflash"
 	"github.com/roffe/bdmtool/v3/firmwares"
 )
@@ -20,12 +26,12 @@ func (u *UI) ardubdmMenu() *fyne.MenuItem {
 func (u *UI) combiMenu() *fyne.MenuItem {
 	m := fyne.NewMenuItem("CombiAdapter", nil)
 	m.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("2.3 (latest)", func() { u.uploadCombi("2.3 (latest)", firmwares.CombiAdapterBin) }),
-		fyne.NewMenuItem("Bootloader 2.0 + 2.3 (latest)", func() {
-			u.uploadCombiBoot("2.0", 200, firmwares.CombiBootInstallerBin, "2.3 (latest)", firmwares.CombiAdapterBin)
+		fyne.NewMenuItem("2.4 (latest)", func() { u.uploadCombi("2.4 (latest)", firmwares.CombiAdapterBin) }),
+		fyne.NewMenuItem("Bootloader 2.0 + 2.4 (latest)", func() {
+			u.uploadCombiBoot("2.0", 200, firmwares.CombiBootInstallerBin, "2.4 (latest)", firmwares.CombiAdapterBin)
 		}),
-		fyne.NewMenuItem("Bootloader 1.0 (original) + 2.3", func() {
-			u.uploadCombiBoot("1.0", 4, firmwares.CombiBoot10InstallerBin, "2.3 (latest)", firmwares.CombiAdapterBin)
+		fyne.NewMenuItem("Bootloader 1.0 (original) + 2.4", func() {
+			u.uploadCombiBoot("1.0", 4, firmwares.CombiBoot10InstallerBin, "2.4 (latest)", firmwares.CombiAdapterBin)
 		}),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("1.1 (legacy)", func() { u.uploadCombi("1.1 (legacy)", firmwares.CombiAdapter111Bin) }),
@@ -94,6 +100,50 @@ func (u *UI) uploadCombiBoot(ver string, block int, inst []byte, name string, fw
 				return installCombiBoot(ver, block, inst, name, fw, u.logf, status, p)
 			})
 		}, u.win)
+}
+
+// CombiDumpWindow (Ctrl+D in bdmtool) saves the CombiAdapter's own flash, e.g. a V1's
+// bootloader, with firmware 1.4 or 2.4+ (Combi.readSelf). Progress and the
+// log show in the main window.
+func (u *UI) CombiDumpWindow() {
+	w := fyne.CurrentApp().NewWindow("CombiAdapter flash dump")
+	start, length := widget.NewEntry(), widget.NewEntry()
+	start.SetText("0x0")
+	length.SetText("0x4000")
+	dump := widget.NewButton("Dump...", func() {
+		addr, err1 := strconv.ParseUint(start.Text, 0, 32)
+		n, err2 := strconv.ParseUint(length.Text, 0, 32)
+		if err1 != nil || err2 != nil || n == 0 {
+			dialog.ShowError(fmt.Errorf("start and length must be numbers, e.g. 0x0 and 0x4000"), w)
+			return
+		}
+		u.save("combi-flash.bin", ".bin", func(wc io.WriteCloser) {
+			if u.busy.Load() {
+				wc.Close()
+				return
+			}
+			u.Disconnect() // the dump opens the adapter itself
+			u.work("Dump CombiAdapter flash", uint32(n), func(p progressFn) error {
+				defer wc.Close()
+				c, err := Open()
+				if err != nil {
+					return err
+				}
+				defer c.Close()
+				bw := bufio.NewWriter(wc)
+				if err := c.readSelf(uint32(addr), uint32(n), bw, p); err != nil {
+					return err
+				}
+				return bw.Flush()
+			})
+		})
+	})
+	w.SetContent(container.NewVBox(
+		widget.NewForm(widget.NewFormItem("Start", start), widget.NewFormItem("Length", length)),
+		widget.NewLabel("Bootloader: 0x0, 0x4000\nWhole flash: 0x0, 0x20000 on a V1, 0x40000 on a V2"),
+		dump,
+	))
+	w.Show()
 }
 
 func (u *UI) uploadArdubdm() {

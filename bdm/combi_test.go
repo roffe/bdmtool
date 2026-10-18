@@ -228,3 +228,29 @@ func TestCombiIdentify(t *testing.T) {
 		t.Fatal("combiV2 must offer Identify")
 	}
 }
+
+// TestCombiReadSelf: 0x25 in 512-byte blocks on 2.4, refused on 2.0-2.3.
+func TestCombiReadSelf(t *testing.T) {
+	var in, out, got bytes.Buffer
+	flash := make([]byte, 612)
+	for i := range flash {
+		flash[i] = byte(i * 7)
+	}
+	in.Write(packet(cmdFWVersion, []byte{4, 2}))
+	in.Write(packet(cmdReadSelf, flash[:512]))
+	in.Write(packet(cmdReadSelf, flash[512:]))
+	c := &Combi{rd: bufio.NewReader(&in), out: &out, tmo: defaultTimeout}
+	if err := c.readSelf(0x100, 612, &got, func(uint32) {}); err != nil || !bytes.Equal(got.Bytes(), flash) {
+		t.Fatalf("readSelf = %d bytes, %v", got.Len(), err)
+	}
+	want := append(packet(cmdFWVersion, nil), packet(cmdReadSelf, []byte{0, 0, 1, 0, 2, 0})...)
+	want = append(want, packet(cmdReadSelf, []byte{0, 0, 3, 0, 0, 100})...)
+	if !bytes.Equal(out.Bytes(), want) {
+		t.Fatalf("sent % 02X", out.Bytes())
+	}
+
+	in.Write(packet(cmdFWVersion, []byte{3, 2}))
+	if err := c.readSelf(0, 16, &got, func(uint32) {}); err == nil || !strings.Contains(err.Error(), "2.3") {
+		t.Fatalf("2.3: %v", err)
+	}
+}
