@@ -2,7 +2,7 @@ module github.com/roffe/bdmtool/v3
 
 go 1.27.1
 
-replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261018211422-74c43968dfee
+replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261019180338-98a44277973b
 
 require (
 	fyne.io/fyne/v2 v2.8.2-0.20261006204101-016883384852
@@ -38,7 +38,7 @@ require (
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/roffe/gowgpu v0.0.0-20261018211404-a07e7b8e9a5b // indirect
+	github.com/roffe/gowgpu v0.0.0-20261019175826-9751230ba6f8 // indirect
 	github.com/rymdport/portal v0.4.2 // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
