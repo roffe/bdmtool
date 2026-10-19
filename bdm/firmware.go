@@ -26,12 +26,12 @@ func (u *UI) ardubdmMenu() *fyne.MenuItem {
 func (u *UI) combiMenu() *fyne.MenuItem {
 	m := fyne.NewMenuItem("CombiAdapter", nil)
 	m.ChildMenu = fyne.NewMenu("",
-		fyne.NewMenuItem("2.4 (latest)", func() { u.uploadCombi("2.4 (latest)", firmwares.CombiAdapterBin) }),
-		fyne.NewMenuItem("Bootloader 2.0 + 2.4 (latest)", func() {
-			u.uploadCombiBoot("2.0", 200, firmwares.CombiBootInstallerBin, "2.4 (latest)", firmwares.CombiAdapterBin)
+		fyne.NewMenuItem("2.5 (latest)", func() { u.uploadCombi("2.5 (latest)", firmwares.CombiAdapterBin) }),
+		fyne.NewMenuItem("Bootloader 2.1 + 2.5 (latest)", func() {
+			u.uploadCombiBoot("2.1", 200, firmwares.CombiBootInstallerBin, "2.5 (latest)", firmwares.CombiAdapterBin)
 		}),
-		fyne.NewMenuItem("Bootloader 1.0 (original) + 2.4", func() {
-			u.uploadCombiBoot("1.0", 4, firmwares.CombiBoot10InstallerBin, "2.4 (latest)", firmwares.CombiAdapterBin)
+		fyne.NewMenuItem("Bootloader 1.0 (original) + 2.5", func() {
+			u.uploadCombiBoot("1.0", 4, firmwares.CombiBoot10InstallerBin, "2.5 (latest)", firmwares.CombiAdapterBin)
 		}),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("1.1 (legacy)", func() { u.uploadCombi("1.1 (legacy)", firmwares.CombiAdapter111Bin) }),

@@ -147,7 +147,7 @@ The Firmware menu flashes the firmware images built into BDM Tool.
 
 - **Upload ArduBDM** writes the ardubdm firmware to the board on the selected
   serial port.
-- **CombiAdapter → 1.1 (legacy)** / **2.4 (latest)** writes CombiAdapter
+- **CombiAdapter → 1.1 (legacy)** / **2.5 (latest)** writes CombiAdapter
   firmware over the adapter's USB bootloader. It takes 10 to 15 seconds and
   the adapter restarts when it is done. On Windows, 2.1 and later need no Zadig:
   Windows installs WinUSB for them on their own. 2.2 gives each adapter its own
@@ -158,23 +158,23 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   catches the bootloader in the 4 seconds it runs after power-up. The bootloader itself is never
   overwritten, so a failed upload can always be repeated. Only the original
   LPC17xx CombiAdapter is supported; STM32 clones are refused.
-- **CombiAdapter → Bootloader 2.0 + 2.4 (latest)** replaces the adapter's
-  bootloader with bootloader 2.0, then writes 2.4 through it. V2 boards only:
-  on a V1 the installer refuses and blinks the error LED, leaving the old
-  bootloader in place. Bootloader 2.0
+- **CombiAdapter → Bootloader 2.1 + 2.5 (latest)** replaces the adapter's
+  bootloader with bootloader 2.1, then writes 2.5 through it. One image for
+  V1 and V2 boards; the installer refuses a bootloader that doesn't fit a V1
+  and leaves the old one in place (2.0 was V2 only). Bootloader 2.1
   flashes firmware in about a second, and hands USB over to the firmware
-  without the adapter dropping off the bus. It first uploads bootloader 2.0's
+  without the adapter dropping off the bus. It first uploads bootloader 2.1's
   installer as the firmware, the same way as above. The installer then writes
-  the new bootloader, erases itself and restarts the adapter, and bootloader 2.0
+  the new bootloader, erases itself and restarts the adapter, and bootloader 2.1
   waits, with no time limit, for the firmware that follows. Keep the adapter
   plugged in: if it loses power during the half second the bootloader is
   written, it can only be recovered over SWD or the LPC17xx ROM ISP. If the
-  flow stops after the install, the adapter stays in bootloader 2.0 and
-  **2.4 (latest)** finishes the job. Running it again on bootloader 2.0 only
+  flow stops after the install, the adapter stays in bootloader 2.1 and
+  **2.5 (latest)** finishes the job. Running it again on bootloader 2.1 only
   rewrites the firmware.
-- **CombiAdapter → Bootloader 1.0 (original) + 2.4** goes back: the same
+- **CombiAdapter → Bootloader 1.0 (original) + 2.5** goes back: the same
   flow with an installer carrying the adapter's original 1.0 bootloader, then
-  2.4 through it in 4-byte lines (about 7 seconds). **Bootloader 1.0
+  2.5 through it in 4-byte lines (about 7 seconds). **Bootloader 1.0
   (original) + 1.1 (legacy)** does the same with 1.1, restoring a stock
   adapter. The same power warning
   applies. The 1.0 bootloader and 1.x firmware enumerate with serial `BEEF`
@@ -182,7 +182,7 @@ The Firmware menu flashes the firmware images built into BDM Tool.
   COM port or as a device with no driver. On a COM port BDM Tool flashes
   through it. With no driver, give the CombiAdapter (`FFFF 0005`) WinUSB with
   Zadig (Options → List All Devices); the adapter waits in the bootloader
-  meanwhile, and **1.1 (legacy)** or **2.4 (latest)** finishes the job. Using
+  meanwhile, and **1.1 (legacy)** or **2.5 (latest)** finishes the job. Using
   1.x for BDM or CAN on Windows needs that driver anyway.
 - **bdmtoy → 2.2 (latest)** writes bdmtoy firmware over its USB bootloader (firmware
   2.0 or later, see [bdmtoy](#bdmtoy)) in about 7 seconds, then reports the
