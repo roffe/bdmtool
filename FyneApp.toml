@@ -5,7 +5,7 @@ Icon = "icons/app.png"
 Name = "BDMTool"
 ID = "com.roffe.bdmtool"
 Version = "3.0.9"
-Build = 50
+Build = 52
 
 [Migrations]
 fyneDo = true
