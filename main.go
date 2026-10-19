@@ -25,7 +25,7 @@ import (
 func main() {
 	shot := flag.String("screenshot", "", "write a PNG of the main window to this path and exit")
 	flag.Parse()
-	a := fyneapp.New()
+	a := fyneapp.NewWithID("com.roffe.bdmtool")
 	meta := a.Metadata()
 	title := fmt.Sprintf("BDM tool %s build %d", meta.Version, meta.Build)
 	w := a.NewWindow(title)

@@ -4,8 +4,8 @@ Website = "https://roffe.nu/"
 Icon = "icons/app.png"
 Name = "BDMTool"
 ID = "com.roffe.bdmtool"
-Version = "3.0.9"
-Build = 52
+Version = "3.0.10"
+Build = 55
 
 [Migrations]
 fyneDo = true
