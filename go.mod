@@ -2,7 +2,7 @@ module github.com/roffe/bdmtool/v3
 
 go 1.27.1
 
-replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261022181558-75154749509e
+replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261023231422-f5b3f1e31e55
 
 require (
 	fyne.io/fyne/v2 v2.8.2-0.20261006204101-016883384852
@@ -29,7 +29,6 @@ require (
 	github.com/go-text/render v0.2.1 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
-	github.com/gogpu/naga v0.20.3 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.0 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
@@ -38,7 +37,8 @@ require (
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/roffe/gowgpu v0.0.0-20261022181510-205c72a06607 // indirect
+	github.com/roffe/gowgpu v0.0.0-20261023230723-1adae8e2d2b4 // indirect
+	github.com/roffe/naga v0.0.0-20261023225641-3fa38b9bec83 // indirect
 	github.com/rymdport/portal v0.4.2 // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
