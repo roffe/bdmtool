@@ -403,7 +403,22 @@ func (a *ArduBDM) Version() (major, minor byte, err error) {
 	return byte(unhex16(r) >> 8), byte(unhex16(r)), nil
 }
 
-func (a *ArduBDM) Stop() error    { _, err := a.cmd(grpMCU, cmdStopMCU, "", 0); return err }
+// Stop halts the MCU through BKPT. A CPU that already sat in BDM can be out
+// of frame sync, and the firmware resyncs only after a failed command, so
+// read D0 until a read comes back.
+func (a *ArduBDM) Stop() error {
+	if _, err := a.cmd(grpMCU, cmdStopMCU, "", 0); err != nil {
+		return err
+	}
+	var err error
+	for range 3 {
+		if _, err = a.readReg(0); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
 func (a *ArduBDM) Restart() error { _, err := a.cmd(grpMCU, 's', "", 0); return err }
 func (a *ArduBDM) Reset() error   { _, err := a.cmd(grpMCU, cmdResetMCU, "", 0); return err }
 

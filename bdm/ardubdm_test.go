@@ -195,6 +195,37 @@ func TestArduDrainStreaming(t *testing.T) {
 	}
 }
 
+// scriptPort answers each write with the next scripted reply, so a drain
+// after a failed command finds nothing left to eat.
+type scriptPort struct {
+	fakePort
+	replies []string
+}
+
+func (s *scriptPort) Write(p []byte) (int, error) {
+	if len(s.replies) > 0 {
+		s.in.WriteString(s.replies[0])
+		s.replies = s.replies[1:]
+	}
+	return s.fakePort.Write(p)
+}
+
+func TestArduStopResync(t *testing.T) {
+	for _, c := range []struct {
+		replies []string
+		fail    bool
+	}{
+		{[]string{"\r", "\x07", "\x07", "00000000\r\n\r"}, false},
+		{[]string{"\r", "\x07", "\x07", "\x07"}, true},
+		{[]string{"\x07"}, true},
+	} {
+		a := &ArduBDM{p: &scriptPort{replies: c.replies}, tmo: time.Second}
+		if err := a.Stop(); (err != nil) != c.fail {
+			t.Errorf("replies %q: Stop() = %v", c.replies, err)
+		}
+	}
+}
+
 func TestCMFIProgram(t *testing.T) {
 	// 1280-byte image: the first chunk is erased and skipped, the second is
 	// programmed. Driver upload + init, then one write run.
