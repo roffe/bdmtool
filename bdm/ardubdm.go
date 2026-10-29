@@ -138,13 +138,23 @@ func OpenArdu(name string) (*ArduBDM, error) {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	_ = p.SetReadTimeout(100 * time.Millisecond)
+	reset := func() {
+		_ = p.SetDTR(true)
+		time.Sleep(10 * time.Millisecond)
+		_ = p.SetDTR(false)
+	}
 	// After a plug the board can sit silent until reset, and the open alone
 	// does not always pulse DTR, so reset it here on every connect.
-	_ = p.SetDTR(true)
-	time.Sleep(10 * time.Millisecond)
-	_ = p.SetDTR(false)
+	reset()
 	a := &ArduBDM{p: p}
-	if err := a.handshake(); err != nil {
+	err = a.handshake()
+	if err != nil && !errors.Is(err, errNoResponse) {
+		// A board back-powered from the ECU can keep streaming zeros through
+		// the first reset; a second one gets it going.
+		reset()
+		err = a.handshake()
+	}
+	if err != nil {
 		a.Close()
 		return nil, fmt.Errorf("ardubdm on %s did not respond: %w", name, err)
 	}
@@ -188,6 +198,8 @@ func (a *ArduBDM) write(p []byte) error {
 	return nil
 }
 
+var errNoResponse = errors.New("no response from adapter")
+
 // read blocks for exactly n bytes.
 func (a *ArduBDM) read(n int) ([]byte, error) {
 	buf := make([]byte, n)
@@ -198,7 +210,7 @@ func (a *ArduBDM) read(n int) ([]byte, error) {
 			return nil, err
 		}
 		if k == 0 && time.Now().After(deadline) {
-			return nil, errors.New("no response from adapter")
+			return nil, errNoResponse
 		}
 		got += k
 	}
