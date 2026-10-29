@@ -138,6 +138,11 @@ func OpenArdu(name string) (*ArduBDM, error) {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	_ = p.SetReadTimeout(100 * time.Millisecond)
+	// After a plug the board can sit silent until reset, and the open alone
+	// does not always pulse DTR, so reset it here on every connect.
+	_ = p.SetDTR(true)
+	time.Sleep(10 * time.Millisecond)
+	_ = p.SetDTR(false)
 	a := &ArduBDM{p: p}
 	if err := a.handshake(); err != nil {
 		a.Close()
