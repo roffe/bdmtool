@@ -178,6 +178,23 @@ func TestArduHandshake(t *testing.T) {
 	}
 }
 
+// zeroPort is a board back-powered from the ECU holding its TX low: zeros
+// without end.
+type zeroPort struct{ fakePort }
+
+func (z *zeroPort) Read(p []byte) (int, error) { clear(p); return len(p), nil }
+
+func TestArduDrainStreaming(t *testing.T) {
+	a := &ArduBDM{p: &zeroPort{}}
+	done := make(chan struct{})
+	go func() { a.drain(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("drain never returned on a port that keeps sending")
+	}
+}
+
 func TestCMFIProgram(t *testing.T) {
 	// 1280-byte image: the first chunk is erased and skipped, the second is
 	// programmed. Driver upload + init, then one write run.

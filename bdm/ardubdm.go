@@ -205,10 +205,12 @@ func (a *ArduBDM) read(n int) ([]byte, error) {
 	return buf, nil
 }
 
-// drain discards input until the adapter has been quiet for a read timeout.
+// drain discards input until the adapter has been quiet for a read timeout,
+// for at most a second: a board back-powered from the ECU can stream without
+// end.
 func (a *ArduBDM) drain() {
 	buf := make([]byte, 512)
-	for {
+	for end := time.Now().Add(time.Second); time.Now().Before(end); {
 		n, err := a.p.Read(buf)
 		if n == 0 || err != nil {
 			return
