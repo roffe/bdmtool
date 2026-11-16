@@ -2,7 +2,7 @@ module github.com/roffe/bdmtool/v3
 
 go 1.27.1
 
-replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261105232428-743aaf0a06c8
+replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261116084458-c3a767d9b3a5
 
 require (
 	fyne.io/fyne/v2 v2.8.2-0.20261006204101-016883384852
