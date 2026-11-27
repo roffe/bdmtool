@@ -2,7 +2,7 @@ module github.com/roffe/bdmtool/v3
 
 go 1.27.1
 
-replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261116233411-e88bf9ac65eb
+replace fyne.io/fyne/v2 => github.com/roffe/fyne/v2 v2.0.0-20261126185115-8006a7a6f08a
 
 require (
 	fyne.io/fyne/v2 v2.8.2-0.20261006204101-016883384852
@@ -19,7 +19,7 @@ require (
 	github.com/anthonynsimon/bild v0.17.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
-	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
+	github.com/fyne-io/gl-js v0.2.1-0.20261121122654-840fe93a293a // indirect
 	github.com/fyne-io/glfw-js v0.4.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
 	github.com/fyne-io/oksvg v0.2.1-0.20260918172519-a9af55fa95d9 // indirect
